@@ -1,0 +1,1 @@
+"""AGI Assistant backend application."""

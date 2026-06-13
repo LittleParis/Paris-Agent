@@ -1,0 +1,263 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: #d8e0eb;
+  background: #0b1017;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.workbench-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 20px;
+  border-right: 1px solid #202a36;
+  background: #0e151e;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid #47647f;
+  border-radius: 10px;
+  color: #8fc7ff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.brand strong,
+.brand small {
+  display: block;
+}
+
+.brand small {
+  margin-top: 3px;
+  color: #75869a;
+  font-size: 12px;
+}
+
+.sidebar nav {
+  margin-top: 42px;
+}
+
+.sidebar nav a {
+  display: block;
+  padding: 11px 12px;
+  border-radius: 8px;
+  color: #91a0b1;
+  text-decoration: none;
+}
+
+.sidebar nav a.router-link-active {
+  color: #e8f3ff;
+  background: #172433;
+}
+
+.phase-label {
+  margin: auto 0 0;
+  color: #617185;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.workspace {
+  min-width: 0;
+  padding: 34px clamp(24px, 4vw, 64px) 64px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid #202a36;
+}
+
+.eyebrow {
+  color: #6f91b2;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: clamp(30px, 4vw, 48px);
+  letter-spacing: -0.04em;
+}
+
+.dashboard {
+  display: grid;
+  gap: 24px;
+  padding-top: 32px;
+}
+
+.intro-panel,
+.roadmap-panel,
+.service-card {
+  border: 1px solid #223040;
+  background: #111a24;
+}
+
+.intro-panel {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 36px;
+  padding: clamp(28px, 5vw, 56px);
+}
+
+.intro-panel h2 {
+  max-width: 820px;
+  margin: 14px 0 16px;
+  color: #f2f6fb;
+  font-size: clamp(30px, 5vw, 64px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.intro-panel p,
+.service-card p,
+.roadmap-panel p {
+  color: #8494a7;
+  line-height: 1.7;
+}
+
+.intro-panel p {
+  max-width: 720px;
+}
+
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: #223040;
+  border: 1px solid #223040;
+}
+
+.service-card {
+  min-height: 180px;
+  padding: 24px;
+  border: 0;
+}
+
+.card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.card-heading h3,
+.roadmap-panel h3 {
+  color: #edf4fc;
+}
+
+.card-heading span {
+  color: #73c99c;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.roadmap-panel {
+  padding: 30px;
+}
+
+.roadmap-panel h3 {
+  margin: 10px 0 8px;
+  font-size: 24px;
+}
+
+@media (max-width: 960px) {
+  .workbench-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 24px;
+    padding: 16px 20px;
+    border-right: 0;
+    border-bottom: 1px solid #202a36;
+  }
+
+  .sidebar nav {
+    margin: 0 0 0 auto;
+  }
+
+  .phase-label {
+    display: none;
+  }
+
+  .service-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace {
+    padding: 24px 16px 40px;
+  }
+
+  .intro-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .service-grid {
+    grid-template-columns: 1fr;
+  }
+}

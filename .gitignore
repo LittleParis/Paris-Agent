@@ -1,0 +1,40 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+backend/.venv/
+backend/.pytest_cache/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+.python-version
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+celerybeat-schedule
+celerybeat.pid
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.local
+pnpm-debug.log*
+
+# Editors and operating systems
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Runtime data
+*.log
+data/
+tmp/
+temp/
