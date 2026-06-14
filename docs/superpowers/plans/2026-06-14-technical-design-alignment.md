@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 Paris Agent 的总体技术设计、P1 Agent Run 契约和数据库修订策略统一为与 `AGENTS.md` 及当前 P1 实现一致的可执行文档基线。
+**Goal:** 将 Paris Agent 的总体技术设计、历史文件名为 P1 的 Agent Run 契约和数据库修订策略统一为与 `AGENTS.md` 及当前 P2 实现一致的可执行文档基线。
 
 **Architecture:** `AGENTS.md` 保持最高约束，`FULLSTACK_TECH_DESIGN.md` 负责跨阶段架构和统一契约，专项文档负责阶段细节。文档明确区分“当前已实现”“当前阶段目标”“未来设计”，并通过状态、字段、阶段编号和 PostgreSQL 规则扫描防止契约漂移。
 
@@ -59,9 +59,11 @@ AGENTS.md > FULLSTACK_TECH_DESIGN.md > 专项契约 > 已实现代码与 Migrati
 
 ```text
 P0 项目骨架已完成
-P1 后端 Agent Run Mock 已完成
-P1 前端 ChatPage 联调进行中
-P2-P16 未开始
+P1 health check 与前端基础布局已完成
+P2 后端 Agent Run Mock 已完成
+P3 前端 ChatPage 联调进行中
+P4 后端进程内 SSE 已部分实现
+P5-P16 未开始
 ```
 
 列出当前已存在的 POST、GET 和 SSE 接口，以及进程内 Mock Runner 的限制。
@@ -146,7 +148,7 @@ git add -- docs/FULLSTACK_TECH_DESIGN.md
 git commit -m "docs: align fullstack technical design"
 ```
 
-### Task 2: 对齐 P1 Agent Run 契约
+### Task 2: 对齐历史文件名为 P1 的 Agent Run 契约
 
 **Files:**
 - Modify: `docs/P1_AGENT_RUN_CONTRACT.md`
@@ -169,7 +171,7 @@ failed
 cancelled
 ```
 
-P1 实际迁移记录为：
+P2 实际迁移记录为：
 
 ```text
 queued -> running -> succeeded
@@ -189,7 +191,7 @@ AgentRunRead
 明确 `POST` 返回 `202 Accepted`、`Location`、`detail_url` 和 `events_url`；
 `user_id` 来自服务端配置，客户端不能提交。
 
-- [ ] **Step 3: 对齐 SSE 帧和 P1 限制**
+- [ ] **Step 3: 对齐 SSE 帧和 P2 限制**
 
 记录当前事件顺序：
 
@@ -207,7 +209,7 @@ run.completed
 
 - [ ] **Step 4: 增加后续兼容迁移说明**
 
-明确未来 `runtime_events` 稳定信封不能直接破坏 P1 前端，必须提供兼容映射或同步升级
+明确未来 `runtime_events` 稳定信封不能直接破坏 P3 前端，必须提供兼容映射或同步升级
 专项契约。
 
 - [ ] **Step 5: 对比源码字段**
@@ -220,11 +222,11 @@ Select-String -Path 'docs\P1_AGENT_RUN_CONTRACT.md' -Pattern 'success','succeede
 
 Expected: `success` 不作为状态值出现；其余契约关键词均存在。
 
-- [ ] **Step 6: 提交 P1 契约**
+- [ ] **Step 6: 提交 Agent Run 契约**
 
 ```powershell
 git add -- docs/P1_AGENT_RUN_CONTRACT.md
-git commit -m "docs: synchronize p1 agent run contract"
+git commit -m "docs: synchronize agent run mock contract"
 ```
 
 ### Task 3: 更新数据库修订策略
@@ -249,7 +251,7 @@ NUMERIC(18,8)
 用户、线程、项目和活跃状态索引
 ```
 
-后续策略不能要求重新设计或破坏该 P1 契约。
+后续策略不能要求重新设计或破坏该 P2 契约。
 
 - [ ] **Step 2: 确定基础领域表顺序**
 
