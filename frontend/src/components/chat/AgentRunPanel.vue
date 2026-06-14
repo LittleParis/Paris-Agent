@@ -2,10 +2,14 @@
 import { computed } from 'vue'
 
 import type { AgentRun, AgentRunCreated } from '../../api/agent'
+import type { SSEConnectionStatus } from '../../api/agentEvents'
+import type { RuntimeEventItem } from '../../stores/agentRun'
 
 const props = defineProps<{
   run: AgentRun | null
   createdRun: AgentRunCreated | null
+  events: RuntimeEventItem[]
+  connectionStatus: SSEConnectionStatus
   errorMessage: string | null
 }>()
 
@@ -20,15 +24,35 @@ const createdAt = computed(
 )
 
 function formatDate(value: string | null): string {
-  if (!value) {
-    return '—'
-  }
-
+  if (!value) { return '—' }
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
     timeStyle: 'medium',
   }).format(new Date(value))
 }
+
+function formatEventTime(timestamp: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(timestamp))
+}
+
+const connectionStatusLabel = computed(() => {
+  switch (props.connectionStatus) {
+    case 'idle': return '未连接'
+    case 'connecting': return '连接中'
+    case 'open': return '已连接'
+    case 'reconnecting': return '重连中'
+    case 'closed': return '已关闭'
+    default: return props.connectionStatus
+  }
+})
+
+const connectionStatusClass = computed(() => {
+  return `connection-status--${props.connectionStatus}`
+})
 </script>
 
 <template>
@@ -58,6 +82,14 @@ function formatDate(value: string | null): string {
           <dd>{{ run?.current_node ?? '—' }}</dd>
         </div>
         <div>
+          <dt>Connection</dt>
+          <dd>
+            <span class="connection-status" :class="connectionStatusClass">
+              {{ connectionStatusLabel }}
+            </span>
+          </dd>
+        </div>
+        <div>
           <dt>Created</dt>
           <dd>{{ formatDate(createdAt) }}</dd>
         </div>
@@ -85,9 +117,31 @@ function formatDate(value: string | null): string {
       <p>{{ errorMessage }}</p>
     </div>
 
+    <!-- 事件时间线 -->
+    <div v-if="events.length > 0" class="event-timeline">
+      <h3>事件时间线</h3>
+      <ol class="event-list">
+        <li
+          v-for="event in events"
+          :key="event.sequence"
+          class="event-item"
+          :class="`event-item--${event.event_type.replace('.', '-')}`"
+        >
+          <div class="event-header">
+            <span class="event-sequence">#{{ event.sequence }}</span>
+            <span class="event-type">{{ event.event_type }}</span>
+            <span class="event-time">{{ formatEventTime(event.timestamp) }}</span>
+          </div>
+          <span class="event-status" :class="`run-status--${event.status}`">
+            {{ event.status }}
+          </span>
+        </li>
+      </ol>
+    </div>
+
     <div class="run-panel-note">
-      <span>P3 Scope</span>
-      <p>当前通过 REST 短轮询更新状态；SSE 事件流将在 P4 接入。</p>
+      <span>P4 Scope</span>
+      <p>事件先持久化到数据库，再通过 SSE 推送到浏览器。支持断线恢复和事件回放。</p>
     </div>
   </aside>
 </template>

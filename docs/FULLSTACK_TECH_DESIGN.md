@@ -91,7 +91,7 @@ RAG 评测与可观测性
 | P1 health check + 基础布局 | 已实现 | FastAPI health check、Vue Dashboard 和 WorkbenchLayout 已存在 |
 | P2 Agent Run mock | 已实现 | 数据库持久化、POST/GET、进程内 Mock Runner 已存在 |
 | P3 ChatPage mock | 已实现 | ChatPage、组件、Pinia、REST API Client 和短轮询已完成 |
-| P4 SSE 事件流 | 部分实现 | 后端进程内 SSE 已实现，持久化、重连和前端订阅尚未完成 |
+| P4 SSE 事件流 | 已实现 | runtime_events 持久化、稳定事件信封、Last-Event-ID 回放、心跳、终止关闭、前端 EventSource 订阅和去重已完成 |
 | P5-P16 | 未开始 | 只能按阶段专项实现 |
 
 早期文档曾把 Agent Run Mock 称为“P1”。该叫法只保留在历史文件名
@@ -1195,7 +1195,7 @@ docker compose ps
 
 ### P4：SSE 事件流
 
-**状态：** `[部分实现]`
+**状态：** `[已实现]`
 
 **前置依赖：** P2、P3。
 

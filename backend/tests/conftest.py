@@ -15,6 +15,7 @@ os.environ.update(
         "RABBITMQ_URL": "amqp://test:test@localhost:5672/",
         "DEFAULT_USER_ID": "00000000-0000-0000-0000-000000000001",
         "MOCK_RUN_STEP_DELAY_SECONDS": "0",
+        "SSE_HEARTBEAT_SECONDS": "0.1",
     }
 )
 

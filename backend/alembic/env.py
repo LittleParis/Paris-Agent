@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.core.config import get_settings
 from app.db.base import Base
 # 导入所有 Model，确保它们已注册到 Base.metadata，供 autogenerate/check 使用。
-from app.db.models import AgentRun  # noqa: F401
+from app.db.models import AgentRun, RuntimeEvent  # noqa: F401
 
 
 config = context.config

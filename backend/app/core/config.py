@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     rabbitmq_url: str
     default_user_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     mock_run_step_delay_seconds: float = 0.01
+    sse_heartbeat_seconds: float = 15.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

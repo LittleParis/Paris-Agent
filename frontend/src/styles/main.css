@@ -525,6 +525,144 @@ h1 {
   font-size: 12px;
 }
 
+/* ===== P4: 连接状态指示 ===== */
+
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.connection-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4a5d73;
+}
+
+.connection-status--open::before {
+  background: #59d69e;
+  box-shadow: 0 0 6px rgba(89, 214, 158, 0.4);
+}
+
+.connection-status--connecting::before,
+.connection-status--reconnecting::before {
+  background: #e5a244;
+  box-shadow: 0 0 6px rgba(229, 162, 68, 0.3);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.connection-status--closed::before {
+  background: #ef6b6b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ===== P4: 事件时间线 ===== */
+
+.event-timeline {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #223040;
+}
+
+.event-timeline h3 {
+  color: #8faec8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+
+.event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.event-item {
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid #2a3a4d;
+}
+
+.event-item--run-started {
+  border-left-color: #5a9fd4;
+}
+
+.event-item--node-started {
+  border-left-color: #7b8fd4;
+}
+
+.event-item--message-delta {
+  border-left-color: #59d69e;
+}
+
+.event-item--node-completed {
+  border-left-color: #8faec8;
+}
+
+.event-item--run-completed {
+  border-left-color: #59d69e;
+  background: rgba(89, 214, 158, 0.04);
+}
+
+.event-item--run-failed {
+  border-left-color: #ef6b6b;
+  background: rgba(239, 107, 107, 0.04);
+}
+
+.event-item--run-cancelled {
+  border-left-color: #e5a244;
+  background: rgba(229, 162, 68, 0.04);
+}
+
+.event-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.event-sequence {
+  color: #4a5d73;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 20px;
+}
+
+.event-type {
+  color: #c4d8e8;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.event-time {
+  color: #4a5d73;
+  font-size: 10px;
+  margin-left: auto;
+}
+
+.event-status {
+  display: inline-block;
+  font-size: 10px;
+  margin-top: 2px;
+  padding-left: 28px;
+}
+
 @media (max-width: 1100px) {
   .chat-workspace {
     grid-template-columns: 1fr;

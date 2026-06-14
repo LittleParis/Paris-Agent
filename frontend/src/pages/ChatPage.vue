@@ -12,6 +12,8 @@ const {
   messages,
   currentRun,
   createdRun,
+  events,
+  connectionStatus,
   isBusy,
   errorMessage,
 } = storeToRefs(agentRunStore)
@@ -21,7 +23,7 @@ function handleSubmit(message: string): void {
 }
 
 onBeforeUnmount(() => {
-  agentRunStore.stopPolling()
+  agentRunStore.closeSSE()
 })
 </script>
 
@@ -36,6 +38,8 @@ onBeforeUnmount(() => {
       <AgentRunPanel
         :run="currentRun"
         :created-run="createdRun"
+        :events="events"
+        :connection-status="connectionStatus"
         :error-message="errorMessage"
       />
     </div>

@@ -28,11 +28,11 @@ watch(
 <template>
   <section ref="messageList" class="message-list" aria-live="polite">
     <div v-if="messages.length === 0" class="chat-empty-state">
-      <span class="eyebrow">P3 / Agent Run Mock</span>
+      <span class="eyebrow">P4 / SSE 事件流</span>
       <h2>向 Paris Agent 发起一次运行</h2>
       <p>
-        输入一条技术问题。前端会创建 Agent Run，并通过 REST
-        轮询展示当前状态和模拟回复。
+        输入一条技术问题。前端会创建 Agent Run，并通过 SSE
+        事件流增量接收回复。事件先持久化到数据库，再推送到浏览器。
       </p>
     </div>
 

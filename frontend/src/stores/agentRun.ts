@@ -8,6 +8,11 @@ import {
   type AgentRun,
   type AgentRunCreated,
 } from '../api/agent'
+import {
+  AgentEventSource,
+  type RuntimeEventEnvelope,
+  type SSEConnectionStatus,
+} from '../api/agentEvents'
 
 export interface ChatMessageItem {
   id: string
@@ -16,9 +21,13 @@ export interface ChatMessageItem {
   pending?: boolean
 }
 
-const POLL_INTERVAL_MS = 500
-const POLL_TIMEOUT_MS = 60_000
-const ACTIVE_STATUSES = new Set(['queued', 'running', 'waiting_approval'])
+export interface RuntimeEventItem {
+  sequence: number
+  event_type: string
+  status: string
+  timestamp: string
+  payload: Record<string, unknown>
+}
 
 function createMessageId(): string {
   return crypto.randomUUID()
@@ -30,32 +39,39 @@ function getErrorMessage(error: unknown): string {
     if (typeof detail === 'string') {
       return detail
     }
-
     if (error.code === 'ECONNABORTED') {
       return '请求超时，请确认后端服务是否正常运行。'
     }
-
     if (!error.response) {
       return '无法连接 Paris Agent 后端，请确认 8000 端口已启动。'
     }
   }
-
   return '请求处理失败，请稍后重试。'
 }
 
 export const useAgentRunStore = defineStore('agent-run', () => {
+  // ===== 核心状态 =====
   const messages = ref<ChatMessageItem[]>([])
   const currentRun = ref<AgentRun | null>(null)
   const createdRun = ref<AgentRunCreated | null>(null)
   const isSubmitting = ref(false)
-  const isPolling = ref(false)
   const errorMessage = ref<string | null>(null)
 
-  let pollTimer: ReturnType<typeof setTimeout> | null = null
-  let pollStartedAt = 0
-  let requestToken = 0
+  // ===== P4 SSE 状态 =====
+  const events = ref<RuntimeEventItem[]>([])
+  const connectionStatus = ref<SSEConnectionStatus>('idle')
+  const lastSequence = ref(0)
+  const seenEventIds = ref<Set<string>>(new Set())
 
-  const isBusy = computed(() => isSubmitting.value || isPolling.value)
+  // ===== 内部状态 =====
+  const agentEventSource = new AgentEventSource()
+  let requestToken = 0
+  let pendingAssistantMessageId: string | null = null
+  let accumulatedDelta = ''
+
+  const isBusy = computed(() => isSubmitting.value || connectionStatus.value === 'connecting' || connectionStatus.value === 'open' || connectionStatus.value === 'reconnecting')
+
+  // ===== 消息管理 =====
 
   function addMessage(
     role: ChatMessageItem['role'],
@@ -72,175 +88,251 @@ export const useAgentRunStore = defineStore('agent-run', () => {
     content: string,
   ): void {
     const message = messages.value.find((item) => item.id === messageId)
-    if (!message) {
-      return
-    }
-
+    if (!message) { return }
     message.content = content
     message.pending = false
   }
 
-  function stopPolling(): void {
-    if (pollTimer) {
-      clearTimeout(pollTimer)
-      pollTimer = null
-    }
+  // ===== SSE 事件处理 =====
 
-    isPolling.value = false
-    // 让仍在途中的旧请求失效，避免它完成后覆盖新 Run 的界面状态。
-    requestToken += 1
+  function handleEvent(envelope: RuntimeEventEnvelope): void {
+    // 去重：已见过的 event_id 直接忽略
+    if (seenEventIds.value.has(envelope.event_id)) { return }
+    // 去重：sequence <= lastSequence 直接忽略
+    if (envelope.sequence <= lastSequence.value) { return }
+
+    // 接受事件：记录 event_id 并推进 lastSequence
+    seenEventIds.value.add(envelope.event_id)
+    lastSequence.value = envelope.sequence
+
+    // 记录到事件时间线
+    events.value.push({
+      sequence: envelope.sequence,
+      event_type: envelope.event_type,
+      status: envelope.status,
+      timestamp: envelope.timestamp,
+      payload: envelope.payload as Record<string, unknown>,
+    })
+
+    // 按事件类型分发处理
+    switch (envelope.event_type) {
+      case 'run.started':
+        if (currentRun.value) {
+          currentRun.value = { ...currentRun.value, status: 'running' }
+        }
+        break
+
+      case 'node.started':
+        if (currentRun.value && envelope.payload.node_name) {
+          currentRun.value = {
+            ...currentRun.value,
+            current_node: envelope.payload.node_name,
+          }
+        }
+        break
+
+      case 'message.delta':
+        if (envelope.payload.delta && pendingAssistantMessageId) {
+          accumulatedDelta += envelope.payload.delta
+          const msg = messages.value.find(
+            (item) => item.id === pendingAssistantMessageId,
+          )
+          if (msg) {
+            msg.content = accumulatedDelta
+          }
+        }
+        break
+
+      case 'node.completed':
+        // 保留事件，节点完成时清理 current_node 显示
+        if (currentRun.value) {
+          currentRun.value = { ...currentRun.value, current_node: null }
+        }
+        break
+
+      case 'run.completed': {
+        const finalContent =
+          envelope.payload.output ||
+          accumulatedDelta ||
+          'Agent Run 已完成，但没有返回内容。'
+        if (pendingAssistantMessageId) {
+          completeAssistantMessage(pendingAssistantMessageId, finalContent)
+        }
+        if (currentRun.value) {
+          currentRun.value = { ...currentRun.value, status: 'succeeded' }
+        }
+        // 终态快照 GET
+        refreshRunSnapshot()
+        break
+      }
+
+      case 'run.failed': {
+        const failMessage =
+          envelope.payload.error_message || 'Agent Run 执行失败。'
+        errorMessage.value = failMessage
+        if (pendingAssistantMessageId) {
+          completeAssistantMessage(pendingAssistantMessageId, failMessage)
+        }
+        if (currentRun.value) {
+          currentRun.value = { ...currentRun.value, status: 'failed' }
+        }
+        break
+      }
+
+      case 'run.cancelled': {
+        const cancelMessage = envelope.payload.reason || 'Agent Run 已取消。'
+        errorMessage.value = cancelMessage
+        if (pendingAssistantMessageId) {
+          completeAssistantMessage(pendingAssistantMessageId, cancelMessage)
+        }
+        if (currentRun.value) {
+          currentRun.value = { ...currentRun.value, status: 'cancelled' }
+        }
+        break
+      }
+    }
   }
 
-  function finishWithRun(
-    run: AgentRun,
-    assistantMessageId: string,
-  ): boolean {
-    if (run.status === 'succeeded') {
-      completeAssistantMessage(
-        assistantMessageId,
-        run.final_output || 'Agent Run 已完成，但没有返回内容。',
-      )
-      isPolling.value = false
-      return true
-    }
-
-    if (run.status === 'failed') {
-      const message = run.error_message || 'Agent Run 执行失败。'
-      errorMessage.value = message
-      completeAssistantMessage(assistantMessageId, message)
-      isPolling.value = false
-      return true
-    }
-
-    if (run.status === 'cancelled') {
-      const message = 'Agent Run 已取消。'
-      errorMessage.value = message
-      completeAssistantMessage(assistantMessageId, message)
-      isPolling.value = false
-      return true
-    }
-
-    return false
-  }
-
-  async function pollRun(
-    runId: string,
-    assistantMessageId: string,
-    token: number,
-  ): Promise<void> {
-    if (token !== requestToken) {
-      return
-    }
-
-    if (Date.now() - pollStartedAt >= POLL_TIMEOUT_MS) {
-      const message = '运行状态查询超时，请稍后查看。'
-      errorMessage.value = message
-      completeAssistantMessage(assistantMessageId, message)
-      isPolling.value = false
-      return
-    }
-
+  /**
+   * 收到终止事件后调用一次 GET 刷新最终 tokens/cost/时间。
+   * 该请求失败不覆盖已经由 SSE 得到的终止状态和回复。
+   */
+  async function refreshRunSnapshot(): Promise<void> {
+    const runId = createdRun.value?.run_id ?? currentRun.value?.run_id
+    if (!runId) { return }
     try {
       const run = await getAgentRun(runId)
-      if (token !== requestToken) {
-        return
-      }
-
       currentRun.value = run
-      if (finishWithRun(run, assistantMessageId)) {
-        return
-      }
-
-      if (!ACTIVE_STATUSES.has(run.status)) {
-        const message = `Agent Run 进入未知状态：${run.status}`
-        errorMessage.value = message
-        completeAssistantMessage(assistantMessageId, message)
-        isPolling.value = false
-        return
-      }
-
-      // 递归 setTimeout 可确保当前 GET 完成后再安排下一次请求，避免请求重叠。
-      pollTimer = setTimeout(() => {
-        void pollRun(runId, assistantMessageId, token)
-      }, POLL_INTERVAL_MS)
-    } catch (error) {
-      if (token !== requestToken) {
-        return
-      }
-
-      const message = `状态查询失败：${getErrorMessage(error)}`
-      errorMessage.value = message
-      completeAssistantMessage(assistantMessageId, message)
-      isPolling.value = false
+    } catch {
+      // 终态快照 GET 失败只提示，不覆盖 SSE 已得到的终止状态
+      errorMessage.value =
+        (errorMessage.value ? errorMessage.value + ' ' : '') +
+        '（最终状态详情刷新失败，但回复内容不受影响。）'
     }
   }
+
+  // ===== SSE 连接管理 =====
+
+  function connectSSE(eventsUrl: string): void {
+    agentEventSource.onStatusChange = (status) => {
+      connectionStatus.value = status
+    }
+    agentEventSource.onEvent = handleEvent
+    agentEventSource.onError = (message) => {
+      errorMessage.value = message
+    }
+    agentEventSource.connect(eventsUrl)
+  }
+
+  function closeSSE(): void {
+    agentEventSource.close()
+    connectionStatus.value = 'idle'
+  }
+
+  // ===== 提交消息 =====
 
   async function submitMessage(input: string): Promise<void> {
     const normalizedInput = input.trim()
-    if (!normalizedInput || isBusy.value) {
-      return
-    }
+    if (!normalizedInput || isBusy.value) { return }
 
-    stopPolling()
-    const token = requestToken
+    const token = ++requestToken
+
+    // 关闭旧连接、清理旧 Run 的事件状态
+    closeSSE()
+    events.value = []
+    lastSequence.value = 0
+    seenEventIds.value = new Set()
+    accumulatedDelta = ''
+    pendingAssistantMessageId = null
+
     errorMessage.value = null
     currentRun.value = null
     createdRun.value = null
     isSubmitting.value = true
 
     addMessage('user', normalizedInput)
-    const assistantMessageId = addMessage(
+    const assistantId = addMessage(
       'assistant',
       'Paris Agent 正在创建运行任务…',
       true,
     )
+    pendingAssistantMessageId = assistantId
 
     try {
       const created = await createAgentRun({
         input: normalizedInput,
         task_type: 'chat',
       })
-      if (token !== requestToken) {
-        return
-      }
+      if (token !== requestToken) { return }
 
+      // 保存轻量创建响应
       createdRun.value = created
-      isSubmitting.value = false
-      isPolling.value = true
-      pollStartedAt = Date.now()
-      await pollRun(created.run_id, assistantMessageId, token)
-    } catch (error) {
-      if (token !== requestToken) {
-        return
+      // 初始化 currentRun 为轻量状态
+      currentRun.value = {
+        run_id: created.run_id,
+        thread_id: null,
+        user_id: '',
+        project_id: null,
+        skill_id: null,
+        task_type: 'chat',
+        status: created.status,
+        current_node: null,
+        input: normalizedInput,
+        final_output: null,
+        error_message: null,
+        total_tokens: 0,
+        total_cost: '0.00000000',
+        created_at: created.created_at,
+        updated_at: created.created_at,
       }
 
+      isSubmitting.value = false
+      pendingAssistantMessageId = assistantId
+      accumulatedDelta = ''
+
+      // 连接 SSE events_url
+      connectSSE(created.events_url)
+    } catch (error) {
+      if (token !== requestToken) { return }
       const message = getErrorMessage(error)
       errorMessage.value = message
-      completeAssistantMessage(assistantMessageId, message)
+      completeAssistantMessage(assistantId, message)
       isSubmitting.value = false
-      isPolling.value = false
     }
   }
 
+  // ===== 重置 =====
+
   function reset(): void {
-    stopPolling()
+    closeSSE()
+    requestToken += 1
     messages.value = []
     currentRun.value = null
     createdRun.value = null
     isSubmitting.value = false
     errorMessage.value = null
+    events.value = []
+    lastSequence.value = 0
+    seenEventIds.value = new Set()
+    accumulatedDelta = ''
+    pendingAssistantMessageId = null
   }
 
   return {
+    // 核心状态
     messages,
     currentRun,
     createdRun,
     isSubmitting,
-    isPolling,
     isBusy,
     errorMessage,
+    // P4 SSE 状态
+    events,
+    connectionStatus,
+    lastSequence,
+    // 操作
     submitMessage,
-    stopPolling,
+    closeSSE,
     reset,
   }
 })
