@@ -1,4 +1,5 @@
 from functools import lru_cache
+from uuid import UUID
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +13,8 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
     rabbitmq_url: str
+    default_user_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
+    mock_run_step_delay_seconds: float = 0.01
 
     model_config = SettingsConfigDict(
         env_file=".env",

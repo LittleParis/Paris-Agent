@@ -90,7 +90,7 @@ RAG 评测与可观测性
 | P0 项目骨架 | 已实现 | backend、frontend、docker、docs、scripts 已建立 |
 | P1 health check + 基础布局 | 已实现 | FastAPI health check、Vue Dashboard 和 WorkbenchLayout 已存在 |
 | P2 Agent Run mock | 已实现 | 数据库持久化、POST/GET、进程内 Mock Runner 已存在 |
-| P3 ChatPage mock | 进行中 | 前端页面、组件、Pinia 和 API Client 尚待实现 |
+| P3 ChatPage mock | 已实现 | ChatPage、组件、Pinia、REST API Client 和短轮询已完成 |
 | P4 SSE 事件流 | 部分实现 | 后端进程内 SSE 已实现，持久化、重连和前端订阅尚未完成 |
 | P5-P16 | 未开始 | 只能按阶段专项实现 |
 
@@ -1173,7 +1173,7 @@ docker compose ps
 
 ### P3：ChatPage mock
 
-**状态：** `[进行中]`
+**状态：** `[已实现]`
 
 **前置依赖：** P2。
 

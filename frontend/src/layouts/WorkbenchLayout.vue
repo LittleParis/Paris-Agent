@@ -14,18 +14,19 @@ const pageTitle = computed(() =>
   <div class="workbench-shell">
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark">AGI</span>
+        <span class="brand-mark">PA</span>
         <div>
-          <strong>AGI Assistant</strong>
+          <strong>Paris Agent</strong>
           <small>Agent Workbench</small>
         </div>
       </div>
 
       <nav aria-label="Primary navigation">
         <RouterLink to="/dashboard">Dashboard</RouterLink>
+        <RouterLink to="/chat">Chat</RouterLink>
       </nav>
 
-      <p class="phase-label">P0 / Project Skeleton</p>
+      <p class="phase-label">P3 / ChatPage Mock</p>
     </aside>
 
     <main class="workspace">
@@ -34,7 +35,12 @@ const pageTitle = computed(() =>
           <span class="eyebrow">Skill-based Agent Workbench</span>
           <h1>{{ pageTitle }}</h1>
         </div>
-        <ElTag type="success" effect="plain">Foundation</ElTag>
+        <ElTag
+          :type="route.name === 'chat' ? 'primary' : 'success'"
+          effect="plain"
+        >
+          {{ route.name === 'chat' ? 'P3 Integration' : 'Foundation' }}
+        </ElTag>
       </header>
 
       <RouterView />

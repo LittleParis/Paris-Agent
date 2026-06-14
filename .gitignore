@@ -8,6 +8,7 @@ backend/.venv/
 backend/.pytest_cache/
 backend/**/__pycache__/
 backend/**/*.py[cod]
+backend/*.db
 .python-version
 .coverage
 .coverage.*
