@@ -1,48 +1,135 @@
-# FULLSTACK_TECH_DESIGN.md
+# Paris Agent 前后端一体化技术设计
 
-# Paris Agent 前后端一体化技术设计文档
+## 1. 文档说明
 
-## 1. 项目概述
+### 1.1 文档用途
 
-### 1.1 项目名称
+本文是 Paris Agent 的总体技术设计基线，用于约束跨阶段架构、模块职责、数据契约、
+接口规范、可靠性要求和 P0-P16 实现顺序。
 
-Paris Agent：面向程序员技术学习场景的 Skill-based Agent Workbench
+本文不替代专项契约、SQLAlchemy Model、Alembic Migration、Pydantic Schema 或
+OpenAPI。进入具体阶段前，必须先编写或确认对应专项契约。
 
-### 1.2 项目定位
+### 1.2 权威层级
 
-本项目面向程序员技术学习、知识检索、代码理解、学习路线规划、项目知识沉淀和 Agent 工程实践，构建一个具备 Skill-based Agent Workflow、自研长期记忆系统、Hybrid GraphRAG、动态图 ReAct Runtime、Agent Harness 容错执行引擎、多层安全校验、Docker Sandbox、RabbitMQ 异步任务、RAG 评测和可观测性追踪的全栈 AI Agent 系统。
+发生冲突时按以下顺序处理：
 
-项目不是普通 ChatBot，而是一个可视化 Agent Workbench。用户可以在前端完成：
+1. `AGENTS.md`：项目定位、技术栈、目录规范、开发流程和 P0-P16 阶段顺序。
+2. `docs/FULLSTACK_TECH_DESIGN.md`：总体架构和跨阶段统一契约。
+3. 专项契约文档：某个阶段或领域的详细设计。
+4. 已实现的 Model、Migration、Schema、OpenAPI 和自动化测试：当前运行事实。
+
+如果专项文档与已实现代码冲突，先判断实现是否符合前两层约束。实现正确则更新文档；
+实现错误则单独创建修复任务，禁止用修改文档掩盖实现缺陷。
+
+### 1.3 状态标记
 
 ```text
-技术问答
-学习路线生成
-文档上传与知识库构建
-长期记忆管理
-Skill 调用
-工具调用审批
-代码沙箱执行
-Agent Run Trace 查看
-RAG 评测
-系统监控
+[已实现] 已经存在代码、配置或 Migration，并完成基础验证
+[进行中] 当前阶段正在实现，契约允许小范围调整
+[目标设计] 已确定方向，但尚未实现
+[阶段外] 当前阶段明确不实现
 ```
+
+未来能力必须标为 `[目标设计]` 或 `[阶段外]`，不能描述成当前已经可用。
 
 ---
 
-## 2. 技术选型
+## 2. 项目定位
 
-### 2.1 后端技术栈
+### 2.1 项目名称
+
+```text
+Paris Agent
+```
+
+Paris Agent 是面向程序员技术学习场景的 Skill-based Agent Workbench，不是普通聊天
+机器人。
+
+### 2.2 核心目标
+
+```text
+Skill-based Agent Workflow
+自研长期记忆系统
+Hybrid GraphRAG
+动态图 ReAct Runtime
+Agent Harness 容错执行引擎
+多层安全校验与 Docker Sandbox
+RabbitMQ 异步任务队列
+Agent Runtime 前端可视化
+RAG 评测与可观测性
+```
+
+### 2.3 目标业务场景
+
+- 技术问答与来源引用。
+- 个性化学习路线。
+- 项目和技术文档知识库。
+- 长期学习画像与项目记忆。
+- Skill 显式调用和自动路由。
+- 工具审批与安全执行。
+- Agent Run、节点、工具、Checkpoint 和 Trace 可视化。
+- RAG 检索与生成质量评测。
+
+### 2.4 当前非目标
+
+- 不在早期阶段拆分微服务。
+- 不一次性接入全部中间件。
+- 不让 Skill、Agent 或页面绕过 Tool Manager 直接调用高风险工具。
+- 不把聊天记录直接等同于长期记忆。
+- 不在没有专项设计和 Migration 的情况下批量创建所有未来表。
+
+---
+
+## 3. 当前实现基线
+
+### 3.1 阶段状态
+
+| 阶段 | 状态 | 当前说明 |
+| --- | --- | --- |
+| P0 项目骨架 | 已实现 | backend、frontend、docker、docs、scripts 已建立 |
+| P1 health check + 基础布局 | 已实现 | FastAPI health check、Vue Dashboard 和 WorkbenchLayout 已存在 |
+| P2 Agent Run mock | 已实现 | 数据库持久化、POST/GET、进程内 Mock Runner 已存在 |
+| P3 ChatPage mock | 进行中 | 前端页面、组件、Pinia 和 API Client 尚待实现 |
+| P4 SSE 事件流 | 部分实现 | 后端进程内 SSE 已实现，持久化、重连和前端订阅尚未完成 |
+| P5-P16 | 未开始 | 只能按阶段专项实现 |
+
+早期文档曾把 Agent Run Mock 称为“P1”。该叫法只保留在历史文件名
+`P1_AGENT_RUN_CONTRACT.md` 中；后续需求编号统一以 `AGENTS.md` 为准。
+
+### 3.2 已实现 Agent Run API
+
+```http
+POST /api/agent/runs
+GET /api/agent/runs/{run_id}
+GET /api/agent/runs/{run_id}/events
+```
+
+当前实现限制：
+
+- Runner 使用 FastAPI 进程内异步任务，不是 Celery、LangGraph 或生产 Harness。
+- SSE 事件保存在进程内存中，服务重启后丢失。
+- 不支持多 API 实例共享事件。
+- 不支持持久化回放和 `Last-Event-ID` 断线恢复。
+- P2 不包含 Skill、RAG、记忆、工具和 Sandbox。
+
+---
+
+## 4. 技术栈与依赖管理
+
+### 4.1 后端
 
 ```text
 Python 3.11+
 FastAPI
-LangGraph
-PostgreSQL
+Pydantic / pydantic-settings
 SQLAlchemy
 Alembic
+PostgreSQL
 Redis
 RabbitMQ
 Celery
+LangGraph
 Milvus
 Elasticsearch
 Neo4j
@@ -51,10 +138,20 @@ OpenTelemetry
 Prometheus
 Grafana
 RAGAS
-LiteLLM，可选
 ```
 
-### 2.2 前端技术栈
+依赖管理固定使用：
+
+```powershell
+uv add package_name
+uv add --dev package_name
+uv sync
+uv run uvicorn app.main:app --reload
+```
+
+禁止将 `requirements.txt`、`pip install` 或 `pip freeze` 作为主依赖流程。
+
+### 4.2 前端
 
 ```text
 Vue 3
@@ -68,515 +165,110 @@ TanStack Query for Vue
 ECharts
 Monaco Editor
 SSE / WebSocket
-Markdown Renderer
 ```
 
-### 2.3 依赖管理
+依赖管理固定使用：
 
-后端：
+```powershell
+pnpm add package_name
+pnpm add -D package_name
+pnpm install
+pnpm dev
+```
+
+项目只使用 pnpm，不混用 npm 和 yarn。
+
+### 4.3 中间件阶段
 
 ```text
-uv + pyproject.toml + uv.lock
+第一阶段：PostgreSQL、Redis、RabbitMQ
+第二阶段：Milvus、Elasticsearch、Neo4j
+第三阶段：Prometheus、Grafana、OpenTelemetry Collector
 ```
 
-前端：
-
-```text
-pnpm + package.json + pnpm-lock.yaml
-```
-
-中间件：
-
-```text
-Docker Compose
-```
-
-配置：
-
-```text
-.env.example + .env
-```
-
-数据库迁移：
-
-```text
-Alembic
-```
+所有秘密和环境差异通过 `.env` 注入，仓库只提交 `.env.example`。
 
 ---
 
-## 3. 总体架构
+## 5. 系统架构
+
+### 5.1 总体结构
 
 ```text
-Vue 3 Frontend
-├── ChatPage
-├── SkillSelector
-├── DAGRuntimeViewer
-├── ToolCallTimeline
-├── MemoryPage
-├── KnowledgePage
-├── SandboxPage
-├── EvalPage
-└── MonitoringPage
+Vue 3 Workbench
+  ├── REST API Client
+  ├── SSE Client
+  └── Runtime Visualization
+            ↓
+FastAPI Delivery Layer
+            ↓
+Application Use Cases
+            ↓
+Skill / Runtime / Memory / RAG / Tool Domain Policies
+            ↓
+Repository / Queue / Model / Tool Ports
+            ↓
+Infrastructure Adapters
+  ├── PostgreSQL
+  ├── Redis
+  ├── RabbitMQ / Celery
+  ├── Milvus
+  ├── Elasticsearch
+  ├── Neo4j
+  └── Docker Sandbox
+```
+
+### 5.2 架构形态
+
+后端采用模块化单体。早期阶段不拆微服务，但模块必须通过明确接口通信，避免路由、
+ORM Model 和基础设施代码相互穿透。
+
+依赖方向：
+
+```text
+API / Queue Consumer
         ↓
-FastAPI Gateway
+Application Use Case
         ↓
-Skill Router
+Domain Policy / Runtime Contract
         ↓
-Skill Registry
+Port
         ↓
-Skill Executor
-        ↓
-Agent Harness
-├── Input Guardrail
-├── Intent Classifier
-├── Memory Retriever
-├── Hybrid Retriever
-├── Planner
-├── DAG ReAct Runtime
-├── Tool Manager
-├── Verifier
-├── Output Guardrail
-└── Memory Writer
-        ↓
-Infrastructure
-├── PostgreSQL
-├── Redis
-├── RabbitMQ
-├── Milvus
-├── Elasticsearch
-├── Neo4j
-├── Docker Sandbox
-├── OpenTelemetry
-├── Prometheus
-└── Grafana
+Infrastructure Adapter
+```
+
+FastAPI 路由只负责：
+
+1. 解析和验证协议输入。
+2. 注入认证、Session 和应用服务。
+3. 调用 Use Case。
+4. 映射 HTTP 响应和错误。
+
+复杂业务流程不能长期堆积在路由、Pydantic Schema 或 SQLAlchemy Model 中。
+
+### 5.3 后端模块职责
+
+```text
+api             HTTP 和 SSE 路由
+core            配置、日志、异常和通用安全
+db              Session、Model、Repository 和数据库适配
+schemas         HTTP、消息和公开数据结构
+agent           AgentState、LangGraph、DAG Runtime 和 Harness
+skills          Skill Registry、Router、Validator 和 Executor
+memory          长期记忆写入、合并、检索和策略
+rag             文档处理、Dense、BM25、Graph 和融合检索
+tools           Tool Registry、Manager、Executor 和适配器
+security        输入、输出、工具风险、权限和审批
+queue           Celery、消息 Schema、Producer 和 Consumer
+eval            Golden Query、检索评测和生成评测
+observability   Trace、Metric、Log 和 Cost
 ```
 
 ---
 
-## 4. 项目目录结构
+## 6. 核心执行流程
 
-### 4.1 根目录
-
-```text
-paris-agent/
-├── backend/
-├── frontend/
-├── docker/
-├── docs/
-├── scripts/
-├── AGENTS.md
-├── .gitignore
-└── README.md
-```
-
-### 4.2 后端目录
-
-```text
-backend/
-├── app/
-│   ├── main.py
-│   ├── api/
-│   │   ├── routes_agent.py
-│   │   ├── routes_skills.py
-│   │   ├── routes_memory.py
-│   │   ├── routes_knowledge.py
-│   │   ├── routes_tools.py
-│   │   ├── routes_eval.py
-│   │   └── routes_monitoring.py
-│   ├── core/
-│   │   ├── config.py
-│   │   ├── logging.py
-│   │   ├── exceptions.py
-│   │   └── security.py
-│   ├── db/
-│   │   ├── session.py
-│   │   ├── models.py
-│   │   └── repositories/
-│   ├── schemas/
-│   │   ├── agent.py
-│   │   ├── skill.py
-│   │   ├── memory.py
-│   │   ├── knowledge.py
-│   │   ├── tool.py
-│   │   └── eval.py
-│   ├── agent/
-│   │   ├── state.py
-│   │   ├── graph.py
-│   │   ├── runtime/
-│   │   └── nodes/
-│   ├── skills/
-│   │   ├── registry.py
-│   │   ├── router.py
-│   │   ├── executor.py
-│   │   ├── loader.py
-│   │   ├── schemas.py
-│   │   └── definitions/
-│   ├── memory/
-│   ├── rag/
-│   ├── tools/
-│   ├── security/
-│   ├── queue/
-│   ├── eval/
-│   └── observability/
-├── alembic/
-├── pyproject.toml
-├── uv.lock
-├── alembic.ini
-├── .env.example
-└── README.md
-```
-
-### 4.3 前端目录
-
-```text
-frontend/
-├── src/
-│   ├── main.ts
-│   ├── App.vue
-│   ├── router/
-│   ├── api/
-│   ├── stores/
-│   ├── layouts/
-│   ├── pages/
-│   ├── components/
-│   ├── composables/
-│   ├── utils/
-│   └── styles/
-├── package.json
-├── pnpm-lock.yaml
-├── vite.config.ts
-└── README.md
-```
-
----
-
-## 5. 核心业务场景
-
-### 5.1 技术问答
-
-用户输入：
-
-```text
-Kafka 为什么能够保证高吞吐？
-```
-
-执行流程：
-
-```text
-Skill Router 匹配 tech_qa
-↓
-检索长期学习记忆
-↓
-Hybrid RAG 检索技术资料
-↓
-GraphRAG 查询知识点关系
-↓
-LLM 基于上下文生成答案
-↓
-Verifier 检查回答是否忠实于资料
-↓
-返回答案、来源和相关知识点
-```
-
----
-
-### 5.2 学习路线生成
-
-用户输入：
-
-```text
-我已经学过 Java、Spring Boot 和 MySQL，现在想学习 Kafka 和 Redis。
-```
-
-执行流程：
-
-```text
-Skill Router 匹配 learning_path
-↓
-读取用户学习画像
-↓
-查询技术知识图谱
-↓
-检索相关资料
-↓
-Planner 生成学习阶段
-↓
-task_create 创建学习任务
-↓
-memory_write 更新学习画像
-```
-
----
-
-### 5.3 文档入库
-
-用户上传：
-
-```text
-Kafka PDF
-Spring Boot Markdown
-Redis 面试题 Word
-项目 README
-```
-
-执行流程：
-
-```text
-上传文档
-↓
-保存文档元数据
-↓
-发送 RabbitMQ document.ingest 消息
-↓
-Worker 解析文档
-↓
-Chunk 切分
-↓
-发送 document.embedding 消息
-↓
-写入 Milvus
-↓
-写入 Elasticsearch
-↓
-抽取实体关系写入 Neo4j
-```
-
----
-
-### 5.4 代码沙箱执行
-
-用户输入：
-
-```text
-运行这段 Python 代码，看看输出结果。
-```
-
-执行流程：
-
-```text
-Skill Router 匹配 code_sandbox
-↓
-Tool Risk Classifier 判断风险
-↓
-Permission Checker 检查权限
-↓
-必要时前端弹出审批
-↓
-Docker Sandbox 执行代码
-↓
-返回 stdout / stderr / exit_code
-↓
-RabbitMQ Audit Event
-↓
-Audit Worker 落库
-```
-
----
-
-### 5.5 RAG 评测
-
-用户输入：
-
-```text
-评测当前知识库的检索效果。
-```
-
-执行流程：
-
-```text
-Skill Router 匹配 rag_eval
-↓
-加载 Golden Queries
-↓
-执行 Dense / BM25 / Graph / Hybrid 检索
-↓
-计算 Recall@K、MRR、NDCG、HitRate
-↓
-执行生成质量评测
-↓
-生成评测报告
-```
-
----
-
-## 6. Skill-based Agent Workflow 设计
-
-### 6.1 Skill 定义
-
-Skill 是一个能力包，用于封装某类任务的专用 Prompt、输入输出 Schema、工具集、执行流程、记忆策略和安全策略。
-
-Skill 包含：
-
-```text
-id
-name
-description
-version
-enabled
-input_schema
-output_schema
-prompt
-tools
-workflow
-memory_policy
-safety
-runtime
-```
-
----
-
-### 6.2 Skill 调用方式
-
-显式调用：
-
-```text
-/skill tech_qa Kafka 为什么能保证高吞吐？
-```
-
-隐式调用：
-
-```text
-帮我评测当前知识库效果
-```
-
-系统自动路由到：
-
-```text
-rag_eval
-```
-
----
-
-### 6.3 Skill 系统模块
-
-```text
-backend/app/skills/
-├── registry.py
-├── router.py
-├── executor.py
-├── loader.py
-├── schemas.py
-├── version_manager.py
-├── run_logger.py
-└── definitions/
-    ├── tech_qa.yaml
-    ├── learning_path.yaml
-    ├── document_ingest.yaml
-    ├── rag_eval.yaml
-    ├── memory_consolidation.yaml
-    ├── code_sandbox.yaml
-    ├── project_summary.yaml
-    └── codex_task.yaml
-```
-
----
-
-### 6.4 第一版核心 Skills
-
-| Skill ID             | 名称         | 作用                |
-| -------------------- | ---------- | ----------------- |
-| tech_qa              | 技术问答       | 回答技术问题            |
-| learning_path        | 学习路线       | 生成个性化学习路线         |
-| document_ingest      | 文档入库       | 解析、切分、向量化文档       |
-| rag_eval             | RAG 评测     | 评测检索和生成质量         |
-| memory_consolidation | 记忆整理       | 去重、合并、更新记忆        |
-| code_sandbox         | 代码沙箱       | 安全执行代码            |
-| project_summary      | 项目总结       | 总结项目进度            |
-| codex_task           | Codex 任务拆分 | 将需求拆成 Codex 可执行任务 |
-
----
-
-### 6.5 Skill 配置示例
-
-```yaml
-id: tech_qa
-name: 技术问答 Skill
-description: 基于长期记忆、Hybrid RAG 和技术知识图谱回答程序员技术问题
-version: 1.0.0
-enabled: true
-
-input_schema:
-  question:
-    type: string
-    required: true
-  project_id:
-    type: string
-    required: false
-
-output_schema:
-  answer:
-    type: string
-  sources:
-    type: list
-  related_concepts:
-    type: list
-
-tools:
-  - memory_search
-  - hybrid_search
-  - graph_query
-
-workflow:
-  - node: memory_retriever
-    type: memory
-    tool: memory_search
-  - node: hybrid_retriever
-    type: rag
-    tool: hybrid_search
-  - node: graph_retriever
-    type: graph
-    tool: graph_query
-  - node: answer_generator
-    type: llm
-  - node: verifier
-    type: verifier
-
-memory_policy:
-  read: true
-  write: true
-  write_types:
-    - episodic
-    - learning_profile
-
-safety:
-  risk_level: low
-  requires_approval: false
-
-runtime:
-  max_steps: 8
-  max_tool_calls: 10
-  max_runtime_seconds: 120
-  checkpoint: true
-```
-
----
-
-## 7. Agent Harness 设计
-
-### 7.1 Harness 定位
-
-Agent Harness 是 Agent 的运行时外壳，负责状态、工具、安全、容错、追踪和恢复。
-
-核心组件：
-
-```text
-RunManager
-StateManager
-CheckpointManager
-RetryManager
-FallbackManager
-TimeoutManager
-ToolIsolationManager
-SchemaValidator
-EventPublisher
-TraceRecorder
-CostManager
-```
-
----
-
-### 7.2 Agent 执行链路
+### 6.1 完整目标流程
 
 ```text
 用户输入
@@ -584,8 +276,6 @@ CostManager
 Input Guardrail
 ↓
 Skill Router
-↓
-Skill Executor
 ↓
 Memory Retriever
 ↓
@@ -603,131 +293,130 @@ Output Guardrail
 ↓
 Memory Writer
 ↓
-Final Response
+最终响应
 ```
 
----
+该流程属于 `[目标设计]`。每个阶段只接入当期所需节点，不能在 P2-P4 假装已经具备
+完整 Runtime。
 
-### 7.3 AgentState
+### 6.2 运行时职责边界
 
-```python
-from typing import TypedDict, Any
+#### LangGraph
 
-class AgentState(TypedDict):
-    run_id: str
-    thread_id: str
-    user_id: str
-    project_id: str | None
-    skill_id: str | None
-    user_input: str
-    intent: str | None
-    messages: list[dict[str, Any]]
-    memories: list[dict[str, Any]]
-    retrieved_chunks: list[dict[str, Any]]
-    graph_context: list[dict[str, Any]]
-    dag_plan: dict[str, Any] | None
-    current_node: str | None
-    node_states: dict[str, Any]
-    tool_calls: list[dict[str, Any]]
-    tool_results: list[dict[str, Any]]
-    final_answer: str | None
-    error: str | None
-    cost: dict[str, Any]
-    metadata: dict[str, Any]
-```
+- 表达高层状态图。
+- 提供暂停、恢复和人工审批入口。
+- 对接 Checkpoint 持久化。
+- 不重复实现底层工具安全和数据库 Repository。
 
----
+#### 自研 DAG Runtime
 
-## 8. 动态图 ReAct Runtime 设计
+- 校验 DAG 结构和节点 Schema。
+- 检测环、缺失依赖和非法节点。
+- 进行拓扑调度和可控并行执行。
+- 把节点执行委托给受 Harness 管理的 Executor。
 
-### 8.1 设计目标
+#### Agent Harness
 
-传统 ReAct 是串行模式：
+- 管理 Run 生命周期和合法状态迁移。
+- 管理超时、重试、Fallback、取消和恢复。
+- 记录事件、Trace、Checkpoint 和成本。
+- 强制工具隔离和安全策略。
+
+#### Skill Executor
+
+- 加载经过版本校验的 Skill。
+- 校验输入和输出 Schema。
+- 将 Skill Workflow 转换为 DAG Plan。
+- 不直接执行外部工具。
+
+#### Tool Manager
+
+- 所有工具调用的唯一入口。
+- 执行权限、风险、审批和参数校验。
+- 调用具体 Tool Adapter。
+- 写入工具调用和审计事件。
+
+### 6.3 AgentState 原则
+
+AgentState 是运行态数据契约，不直接等同数据库表。大型历史列表不无限累积在单一
+State 中，事件、节点、工具调用和 Checkpoint 应持久化到各自存储。
+
+最低字段：
 
 ```text
-Thought → Action → Observation → Thought → Action → Observation
-```
-
-本项目升级为 DAG ReAct Runtime：
-
-```text
-Planner
-↓
-DAG Plan
-├── memory_search
-├── hybrid_search
-├── graph_query
-└── answer_generator
-↓
-Verifier
-```
-
-优势：
-
-```text
-可并行
-可重试
-可 fallback
-可 checkpoint
-可观测
-可恢复
+run_id
+thread_id
+user_id
+project_id
+skill_id
+skill_version
+input
+messages
+current_node
+node_states
+retrieval_context
+tool_results
+final_output
+error
+usage
+metadata
 ```
 
 ---
 
-### 8.2 DAG Plan
+## 7. Skill 系统
 
-```json
-{
-  "goal": "生成 Kafka 学习路线",
-  "nodes": [
-    {
-      "node_id": "n1",
-      "name": "检索用户学习记忆",
-      "type": "tool",
-      "tool": "memory_search",
-      "depends_on": [],
-      "parallel_group": "retrieval"
-    },
-    {
-      "node_id": "n2",
-      "name": "检索 Kafka 技术资料",
-      "type": "tool",
-      "tool": "hybrid_search",
-      "depends_on": [],
-      "parallel_group": "retrieval"
-    },
-    {
-      "node_id": "n3",
-      "name": "生成学习路线",
-      "type": "llm",
-      "depends_on": ["n1", "n2"]
-    }
-  ]
-}
-```
+### 7.1 Skill 定义
 
----
-
-### 8.3 Runtime 组件
+Skill 是版本化能力包，至少包含：
 
 ```text
-DAGValidator
-DependencyResolver
-TopologicalScheduler
-ParallelNodeExecutor
-ReActNodeExecutor
-NodeStateStore
-RetryManager
-FallbackManager
-CheckpointManager
+skill_id
+name
+description
+version
+input_schema
+output_schema
+prompt
+tools
+workflow
+memory_policy
+safety_policy
+runtime_config
 ```
+
+Skill 定义使用 YAML，位于：
+
+```text
+backend/app/skills/definitions/
+```
+
+### 7.2 第一批 Skill
+
+```text
+tech_qa
+learning_path
+document_ingest
+rag_eval
+memory_consolidation
+code_sandbox
+project_summary
+codex_task
+```
+
+### 7.3 版本规则
+
+- `skill_id` 标识逻辑能力。
+- `version` 使用语义化版本。
+- 已被 Run 引用的 Skill Version 不可原地修改。
+- `agent_skill_runs` 必须记录实际执行版本。
+- YAML 是源码，数据库保存可查询的发布元数据和不可变配置快照。
 
 ---
 
-## 9. 自研长期记忆系统设计
+## 8. 长期记忆
 
-### 9.1 记忆类型
+### 8.1 记忆类型
 
 ```text
 short_term
@@ -740,18 +429,18 @@ task
 runtime
 ```
 
-### 9.2 记忆写入流程
+### 8.2 写入流程
 
 ```text
-用户输入 / Agent 输出 / 工具结果
+候选内容
 ↓
 Memory Extractor
 ↓
 Memory Classifier
 ↓
-Importance Scorer
+Importance / Confidence Scorer
 ↓
-Confidence Scorer
+敏感信息与安全检查
 ↓
 Embedding
 ↓
@@ -759,15 +448,18 @@ Similarity Search
 ↓
 Deduplication
 ↓
-Merge / Update
+Merge / Create / Reject
 ↓
 PostgreSQL + Milvus
 ```
 
-### 9.3 记忆检索评分
+记忆写入必须有来源、归属用户、可选项目、版本、置信度和删除策略。
+
+### 8.3 检索评分
+
+初始评分可以采用：
 
 ```text
-final_score =
 similarity * 0.45
 + importance * 0.25
 + recency * 0.15
@@ -775,514 +467,485 @@ similarity * 0.45
 + project_relevance * 0.05
 ```
 
+权重是可配置实验参数，不作为永久硬编码。进入评测阶段后通过数据调整。
+
 ---
 
-## 10. Hybrid GraphRAG 设计
+## 9. RAG 与数据所有权
 
-### 10.1 检索组成
+### 9.1 分阶段检索
 
 ```text
-Milvus Dense Retrieval
-+
-Elasticsearch BM25 Retrieval
-+
-Neo4j Graph Retrieval
+基础 RAG：Milvus Dense Retrieval
+Hybrid RAG：Milvus + Elasticsearch BM25 + RRF
+GraphRAG：Hybrid Retrieval + Neo4j Graph Retrieval
 ```
 
-### 10.2 检索流程
+### 9.2 数据所有权
+
+| 系统 | 数据职责 |
+| --- | --- |
+| PostgreSQL | 业务事实、状态、关系、版本、审计、外部索引同步状态 |
+| Redis | 缓存、限流、短期锁和可丢失临时状态 |
+| RabbitMQ | 消息传递，不作为长期事实存储 |
+| Milvus | Embedding 向量和向量索引 |
+| Elasticsearch | Chunk 文本的稀疏检索索引 |
+| Neo4j | 知识实体、关系和图检索投影 |
+
+Milvus、Elasticsearch 和 Neo4j 都是可由 PostgreSQL 元数据和原始文档重建的投影。
+
+PostgreSQL 至少记录：
 
 ```text
-用户问题
+external_id
+sync_status
+index_version
+last_synced_at
+sync_error
+```
+
+### 9.3 Hybrid Retrieval
+
+```text
+Query Normalization
 ↓
-Query Rewrite
+可选 Query Rewrite
 ↓
-Milvus 向量召回
+Dense / BM25 / Graph 并行召回
 ↓
-Elasticsearch BM25 召回
+RRF 融合
 ↓
-Neo4j 图谱召回
-↓
-RRF 融合排序
+可选 Rerank
 ↓
 Context Builder
 ↓
-LLM Answer
-↓
-Verifier
+Answer + Sources
 ```
 
-### 10.3 RRF 融合
-
-```text
-score(d) = Σ 1 / (k + rank_i(d))
-```
-
-默认参数：
-
-```text
-k = 60
-top_k_dense = 10
-top_k_sparse = 10
-top_k_graph = 10
-final_top_k = 8
-```
+初始 RRF 参数可使用 `k=60`，但所有 top-k 和权重必须可配置并通过评测验证。
 
 ---
 
-## 11. Tool Registry 设计
+## 10. Tool Registry 与安全
 
-### 11.1 工具元数据
+### 10.1 工具元数据
 
-```json
-{
-  "name": "code_execute",
-  "description": "在 Docker Sandbox 中执行代码",
-  "input_schema": {
-    "language": "string",
-    "code": "string",
-    "timeout": "integer"
-  },
-  "risk_level": "high",
-  "requires_approval": true,
-  "enabled": true
-}
+```text
+name
+description
+input_schema
+output_schema
+risk_level
+requires_approval
+enabled
+timeout_seconds
 ```
 
-### 11.2 核心工具
+风险等级：
 
-| 工具            | 作用            | 风险     |
-| ------------- | ------------- | ------ |
-| memory_search | 查询长期记忆        | safe   |
-| memory_write  | 写入长期记忆        | low    |
-| hybrid_search | Hybrid RAG 检索 | safe   |
-| graph_query   | 查询 Neo4j 图谱   | safe   |
-| task_create   | 创建学习任务        | medium |
-| doc_generate  | 生成文档          | medium |
-| code_execute  | 执行代码          | high   |
-| shell_execute | 执行 Shell      | high   |
+```text
+safe
+low
+medium
+high
+block
+```
 
-工具调用必须经过：
+### 10.2 工具执行链
 
 ```text
 Tool Manager
+↓
+Schema Validator
 ↓
 Tool Guardrail
 ↓
 Permission Checker
 ↓
-Tool Executor
+Approval Manager
+↓
+Tool Executor / Sandbox
+↓
+Output Validator
 ↓
 Audit Logger
 ```
 
----
-
-## 12. 多层安全与 Docker Sandbox
-
-### 12.1 安全链路
+### 10.3 Docker Sandbox 最低要求
 
 ```text
-Input Guardrail
-↓
-Intent Risk Classifier
-↓
-Tool Risk Classifier
-↓
-Permission Checker
-↓
-Docker Sandbox
-↓
-Output Guardrail
-↓
-Audit Logger
+非 root 用户
+镜像白名单与固定 digest
+network none
+read-only root filesystem
+cap-drop ALL
+no-new-privileges
+seccomp / AppArmor
+内存、CPU、PID、磁盘和时间限制
+stdout / stderr 大小限制
+临时目录隔离与回收
+并发限制
 ```
 
-### 12.2 Docker Sandbox 参数
-
-```text
---network none
---read-only
---cap-drop ALL
---security-opt no-new-privileges
---memory 256m
---cpus 0.5
---pids-limit 64
-```
-
-### 12.3 危险命令拦截
-
-```text
-rm -rf /
-mkfs
-dd
-shutdown
-reboot
-curl
-wget
-nc
-ssh
-scp
-chmod 777 /
-sudo
-su
-mount
-umount
-iptables
-```
+命令黑名单只能作为补充，不能替代容器隔离、权限最小化和资源限制。
 
 ---
 
-## 13. RabbitMQ / Celery 设计
+## 11. RabbitMQ 与 Celery
 
-### 13.1 Exchange
+### 11.1 Exchange 与队列
 
 ```text
 Exchange: paris.agent.events
 Type: topic
 ```
 
-### 13.2 Queue
-
-| Queue                    | Routing Key        | 说明       |
-| ------------------------ | ------------------ | -------- |
-| document.ingest.queue    | document.ingest    | 文档解析     |
-| document.embedding.queue | document.embedding | 向量化      |
-| agent.run.events.queue   | agent.run.*        | Agent 事件 |
-| tool.audit.logs.queue    | tool.audit.*       | 工具审计     |
-| rag.eval.tasks.queue     | rag.eval.*         | RAG 评测   |
-| cost.usage.events.queue  | cost.usage.*       | 成本统计     |
-| sandbox.exec.queue       | sandbox.exec.*     | 沙箱执行     |
-
----
-
-## 14. 数据库设计
-
-### 14.1 agent_runs
-
-```sql
-CREATE TABLE agent_runs (
-    id BIGSERIAL PRIMARY KEY,
-    run_id VARCHAR(64) UNIQUE NOT NULL,
-    thread_id VARCHAR(64),
-    user_id VARCHAR(64),
-    project_id VARCHAR(64),
-    skill_id VARCHAR(64),
-    task_type VARCHAR(64),
-    status VARCHAR(32),
-    current_node VARCHAR(64),
-    input TEXT,
-    final_output TEXT,
-    error_message TEXT,
-    total_tokens INT DEFAULT 0,
-    total_cost NUMERIC(10, 6) DEFAULT 0,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-);
-```
-
-### 14.2 agent_steps
-
-```sql
-CREATE TABLE agent_steps (
-    id BIGSERIAL PRIMARY KEY,
-    run_id VARCHAR(64),
-    step_index INT,
-    step_name VARCHAR(128),
-    node_name VARCHAR(128),
-    status VARCHAR(32),
-    input JSONB,
-    output JSONB,
-    error_message TEXT,
-    started_at TIMESTAMP,
-    ended_at TIMESTAMP
-);
-```
-
-### 14.3 agent_node_states
-
-```sql
-CREATE TABLE agent_node_states (
-    id BIGSERIAL PRIMARY KEY,
-    run_id VARCHAR(64),
-    node_id VARCHAR(64),
-    node_name VARCHAR(128),
-    node_type VARCHAR(64),
-    status VARCHAR(32),
-    depends_on JSONB,
-    input JSONB,
-    output JSONB,
-    retry_count INT DEFAULT 0,
-    error_message TEXT,
-    started_at TIMESTAMP,
-    ended_at TIMESTAMP
-);
-```
-
-### 14.4 agent_tool_calls
-
-```sql
-CREATE TABLE agent_tool_calls (
-    id BIGSERIAL PRIMARY KEY,
-    tool_call_id VARCHAR(128) UNIQUE NOT NULL,
-    run_id VARCHAR(64),
-    node_id VARCHAR(64),
-    tool_name VARCHAR(128),
-    input JSONB,
-    output JSONB,
-    status VARCHAR(32),
-    risk_level VARCHAR(32),
-    requires_approval BOOLEAN DEFAULT FALSE,
-    approved_by VARCHAR(64),
-    latency_ms INT,
-    created_at TIMESTAMP
-);
-```
-
-### 14.5 agent_checkpoints
-
-```sql
-CREATE TABLE agent_checkpoints (
-    id BIGSERIAL PRIMARY KEY,
-    checkpoint_id VARCHAR(64) UNIQUE NOT NULL,
-    run_id VARCHAR(64),
-    thread_id VARCHAR(64),
-    node_name VARCHAR(128),
-    node_id VARCHAR(64),
-    state_snapshot JSONB,
-    next_nodes JSONB,
-    created_at TIMESTAMP
-);
-```
-
-### 14.6 agent_memories
-
-```sql
-CREATE TABLE agent_memories (
-    id BIGSERIAL PRIMARY KEY,
-    memory_id VARCHAR(64) UNIQUE NOT NULL,
-    user_id VARCHAR(64),
-    project_id VARCHAR(64),
-    memory_type VARCHAR(32),
-    content TEXT,
-    summary TEXT,
-    importance FLOAT,
-    confidence FLOAT,
-    source VARCHAR(64),
-    tags TEXT[],
-    milvus_id VARCHAR(128),
-    version INT DEFAULT 1,
-    access_count INT DEFAULT 0,
-    last_accessed_at TIMESTAMP,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
-    expires_at TIMESTAMP
-);
-```
-
-### 14.7 agent_skills
-
-```sql
-CREATE TABLE agent_skills (
-    id BIGSERIAL PRIMARY KEY,
-    skill_id VARCHAR(64) UNIQUE NOT NULL,
-    name VARCHAR(128),
-    description TEXT,
-    version VARCHAR(32),
-    config JSONB,
-    enabled BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-);
-```
-
-### 14.8 agent_skill_runs
-
-```sql
-CREATE TABLE agent_skill_runs (
-    id BIGSERIAL PRIMARY KEY,
-    skill_run_id VARCHAR(64) UNIQUE NOT NULL,
-    skill_id VARCHAR(64),
-    skill_version VARCHAR(32),
-    run_id VARCHAR(64),
-    user_id VARCHAR(64),
-    project_id VARCHAR(64),
-    input JSONB,
-    output JSONB,
-    status VARCHAR(32),
-    error_message TEXT,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-);
-```
-
-### 14.9 documents
-
-```sql
-CREATE TABLE documents (
-    id BIGSERIAL PRIMARY KEY,
-    document_id VARCHAR(64) UNIQUE NOT NULL,
-    user_id VARCHAR(64),
-    title VARCHAR(255),
-    file_type VARCHAR(32),
-    file_path TEXT,
-    status VARCHAR(32),
-    chunk_count INT DEFAULT 0,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-);
-```
-
-### 14.10 document_chunks
-
-```sql
-CREATE TABLE document_chunks (
-    id BIGSERIAL PRIMARY KEY,
-    chunk_id VARCHAR(64) UNIQUE NOT NULL,
-    document_id VARCHAR(64),
-    title VARCHAR(255),
-    content TEXT,
-    page_number INT,
-    chunk_index INT,
-    milvus_id VARCHAR(128),
-    elastic_id VARCHAR(128),
-    tags TEXT[],
-    created_at TIMESTAMP
-);
-```
-
-### 14.11 audit_logs
-
-```sql
-CREATE TABLE audit_logs (
-    id BIGSERIAL PRIMARY KEY,
-    audit_id VARCHAR(64) UNIQUE NOT NULL,
-    run_id VARCHAR(64),
-    user_id VARCHAR(64),
-    tool_call_id VARCHAR(128),
-    event_type VARCHAR(64),
-    risk_level VARCHAR(32),
-    input_hash VARCHAR(128),
-    status VARCHAR(32),
-    sandbox_enabled BOOLEAN DEFAULT FALSE,
-    detail JSONB,
-    created_at TIMESTAMP
-);
-```
-
----
-
-## 15. 后端 API 设计
-
-### 15.1 Agent API
-
-```http
-POST /api/agent/runs
-GET /api/agent/runs/{run_id}
-GET /api/agent/runs/{run_id}/events
-GET /api/agent/runs/{run_id}/trace
-POST /api/agent/runs/{run_id}/stop
-POST /api/agent/runs/{run_id}/resume
-```
-
-### 15.2 Skill API
-
-```http
-GET /api/skills
-GET /api/skills/{skill_id}
-POST /api/skills/{skill_id}/run
-GET /api/skills/runs
-GET /api/skills/runs/{skill_run_id}
-```
-
-### 15.3 Memory API
-
-```http
-GET /api/memories
-POST /api/memories
-PUT /api/memories/{memory_id}
-DELETE /api/memories/{memory_id}
-```
-
-### 15.4 Knowledge API
-
-```http
-POST /api/knowledge/documents
-GET /api/knowledge/documents
-GET /api/knowledge/documents/{document_id}
-DELETE /api/knowledge/documents/{document_id}
-GET /api/knowledge/chunks
-POST /api/knowledge/search
-```
-
-### 15.5 Tool API
-
-```http
-GET /api/tools
-GET /api/tools/calls
-POST /api/tools/{tool_name}/execute
-POST /api/tools/calls/{tool_call_id}/approve
-```
-
-### 15.6 Eval API
-
-```http
-POST /api/eval/rag
-GET /api/eval/tasks
-GET /api/eval/tasks/{eval_id}
-```
-
----
-
-## 16. SSE 事件设计
-
-Agent Run 通过 SSE 向前端推送事件。
-
-接口：
-
-```http
-GET /api/agent/runs/{run_id}/events
-```
-
-事件类型：
-
 ```text
-message.delta
-message.completed
-node.started
-node.completed
-node.failed
-tool.started
-tool.completed
-tool.approval_required
-checkpoint.created
-skill.matched
-skill.started
-skill.completed
-run.completed
-run.failed
+document.ingest.queue
+document.embedding.queue
+agent.run.events.queue
+tool.audit.logs.queue
+rag.eval.tasks.queue
+cost.usage.events.queue
+sandbox.exec.queue
 ```
 
-事件示例：
+### 11.2 消息信封
+
+所有业务消息至少包含：
 
 ```json
 {
-  "event_type": "node.completed",
-  "run_id": "run_001",
-  "node_id": "n2",
-  "node_name": "hybrid_search",
-  "status": "success",
-  "latency_ms": 850
+  "message_id": "UUID",
+  "message_type": "document.ingest.requested",
+  "schema_version": 1,
+  "occurred_at": "2026-06-14T00:00:00Z",
+  "correlation_id": "UUID",
+  "causation_id": "UUID-or-null",
+  "idempotency_key": "stable-business-key",
+  "payload": {}
 }
 ```
 
+### 11.3 可靠性规则
+
+- Producer 的数据库变更与待发送消息通过 Transactional Outbox 保证一致。
+- Consumer 提交本地数据库事务后才 ACK。
+- 消费者必须按 `message_id` 或业务幂等键去重。
+- 可重试错误使用指数退避和最大重试次数。
+- 不可重试错误或超过重试上限的消息进入 DLQ。
+- 日志和 Trace 必须携带 `correlation_id`。
+- 消息 Schema 通过 `schema_version` 演进，禁止静默破坏消费者。
+
 ---
 
-## 17. 前端页面设计
+## 12. 数据库统一规范
 
-### 17.1 页面路由
+### 12.1 类型规范
 
 ```text
-/login
+内部主键：BIGINT GENERATED ALWAYS AS IDENTITY
+外部业务标识：UUID
+字符串：TEXT，必要时使用长度 CHECK
+时间：TIMESTAMPTZ
+金额/成本：NUMERIC(18,8)
+计数：INTEGER 或 BIGINT，并增加非负 CHECK
+可扩展载荷：JSONB，并增加对象/数组类型 CHECK
+```
+
+禁止新设计使用：
+
+```text
+BIGSERIAL
+无时区 TIMESTAMP
+FLOAT 保存金额
+用 VARCHAR(n) 代替业务长度约束
+无理由的 PostgreSQL ENUM
+```
+
+### 12.2 基础领域表
+
+| 领域 | 表 | 引入阶段 |
+| --- | --- | --- |
+| Identity | users | 认证与多用户专项阶段 |
+| Project | projects、project_members | 项目上下文阶段 |
+| Conversation | chat_threads、chat_messages | Chat 持久化阶段 |
+| Runtime | agent_runs | P2，已实现 |
+| Runtime | runtime_events | P4 |
+| Runtime | agent_node_states、agent_tool_calls、agent_checkpoints | P10-P11 |
+| Skill | agent_skills、agent_skill_versions、agent_skill_runs | P5 |
+| Memory | agent_memories | P6 |
+| Knowledge | documents、document_chunks | P7 |
+| Audit | audit_logs | P9-P12 |
+| Evaluation | rag_eval_tasks、rag_eval_results | P15 |
+
+`agent_steps` 不是默认必建表。只有定义其与 `agent_node_states` 的非重复用途后才能创建。
+
+### 12.3 约束与索引
+
+每张表必须明确：
+
+- 业务必填字段和默认值。
+- 状态、范围和非空白 CHECK。
+- 业务唯一约束。
+- 外键和 `ON DELETE` 策略。
+- 每个高频外键的显式索引。
+- API 查询所需组合索引。
+- 数据保留、归档和删除规则。
+
+推荐访问路径：
+
+```text
+agent_runs (user_id, created_at DESC)
+agent_runs (thread_id, created_at DESC)
+agent_runs (project_id, created_at DESC)
+agent_runs active partial index (status, created_at)
+runtime_events UNIQUE (run_id, sequence)
+runtime_events (run_id, sequence)
+agent_node_states UNIQUE (run_id, node_id)
+agent_tool_calls (run_id, created_at)
+agent_checkpoints (run_id, created_at DESC)
+agent_memories (user_id, memory_type, updated_at DESC)
+documents (user_id, created_at DESC)
+document_chunks UNIQUE (document_id, chunk_index)
+audit_logs (run_id, created_at)
+```
+
+### 12.4 Migration 流程
+
+```text
+修改 SQLAlchemy Model
+↓
+生成 Alembic Migration
+↓
+人工检查 upgrade 和 downgrade
+↓
+执行 upgrade
+↓
+执行 downgrade
+↓
+重新执行 upgrade
+↓
+运行自动化测试
+↓
+检查关键查询计划
+```
+
+禁止手动进入数据库绕过 Migration 修改结构。
+
+---
+
+## 13. API 统一规范
+
+### 13.1 路径与版本
+
+- API 使用资源导向的复数名词。
+- 当前内部 API 保留 `/api/...`。
+- 第一次对外发布稳定契约前确定 `/api/v1` 或 Header Versioning。
+- 页面组件不得直接拼接请求 URL。
+
+### 13.2 HTTP 语义
+
+```text
+GET     安全且幂等地读取
+POST    创建资源或启动异步任务
+PUT     完整替换
+PATCH   部分更新
+DELETE  幂等删除或标记删除
+```
+
+异步创建 Agent Run 返回：
+
+```http
+202 Accepted
+Location: /api/agent/runs/{run_id}
+```
+
+### 13.3 成功和错误响应
+
+成功响应直接返回资源或分页集合，不强制包裹统一 `{code, message, data}` 信封。
+
+错误统一采用 RFC 7807 风格：
+
+```json
+{
+  "type": "https://paris-agent.local/problems/resource-not-found",
+  "title": "Resource not found",
+  "status": 404,
+  "detail": "Agent run was not found.",
+  "instance": "/api/agent/runs/...",
+  "code": "AGENT_RUN_NOT_FOUND",
+  "trace_id": "..."
+}
+```
+
+至少稳定区分：
+
+```text
+VALIDATION_ERROR
+UNAUTHORIZED
+FORBIDDEN
+RESOURCE_NOT_FOUND
+CONFLICT
+RATE_LIMITED
+INTERNAL_ERROR
+```
+
+### 13.4 分页、过滤和幂等
+
+- 列表默认使用游标分页。
+- `limit` 必须有默认值和最大值。
+- 排序字段使用白名单。
+- 创建类接口在客户端可能重试时支持 `Idempotency-Key`。
+- 重复幂等请求返回同一资源，不创建重复 Run 或任务。
+
+### 13.5 认证和资源归属
+
+- `user_id` 来自认证上下文，不信任客户端任意提交。
+- Repository 查询必须带资源归属条件。
+- 项目资源通过 `project_members` 授权。
+- 接入真实多用户后评估 PostgreSQL Row-Level Security，但不能用 RLS 替代应用授权。
+
+### 13.6 领域 API
+
+```http
+# Agent
+POST /api/agent/runs
+GET  /api/agent/runs/{run_id}
+GET  /api/agent/runs/{run_id}/events
+GET  /api/agent/runs/{run_id}/trace
+POST /api/agent/runs/{run_id}/cancel
+POST /api/agent/runs/{run_id}/resume
+
+# Skills
+GET  /api/skills
+GET  /api/skills/{skill_id}
+POST /api/skills/{skill_id}/runs
+
+# Memory
+GET    /api/memories
+POST   /api/memories
+PATCH  /api/memories/{memory_id}
+DELETE /api/memories/{memory_id}
+
+# Knowledge
+POST   /api/knowledge/documents
+GET    /api/knowledge/documents
+GET    /api/knowledge/documents/{document_id}
+DELETE /api/knowledge/documents/{document_id}
+GET    /api/knowledge/chunks
+POST   /api/knowledge/search
+
+# Tools
+GET  /api/tools
+GET  /api/tool-calls
+POST /api/tool-calls/{tool_call_id}/approval
+
+# Evaluation
+POST /api/eval/rag/runs
+GET  /api/eval/rag/runs
+GET  /api/eval/rag/runs/{eval_id}
+```
+
+这些路径属于目标设计。进入阶段前必须补充请求、响应、错误、权限和幂等契约。
+
+---
+
+## 14. Agent Run 与 SSE 契约
+
+### 14.1 Run 状态
+
+统一状态：
+
+```text
+queued
+running
+waiting_approval
+succeeded
+failed
+cancelled
+```
+
+禁止在 Agent Run 中混用 `success` 和 `succeeded`。
+
+合法迁移：
+
+```text
+queued -> running
+queued -> cancelled
+running -> waiting_approval
+running -> succeeded
+running -> failed
+running -> cancelled
+waiting_approval -> running
+waiting_approval -> cancelled
+```
+
+终态不可恢复为运行态。需要重试整个 Run 时创建新 Run，并记录来源 Run。
+
+### 14.2 稳定事件信封目标
+
+```json
+{
+  "event_id": "UUID",
+  "event_type": "node.completed",
+  "run_id": "UUID",
+  "sequence": 4,
+  "timestamp": "2026-06-14T00:00:00Z",
+  "status": "running",
+  "payload": {
+    "node_id": "n2",
+    "node_name": "hybrid_search",
+    "output": {}
+  }
+}
+```
+
+P2 已实现的扁平事件字段继续兼容到 P4 专项迁移完成。
+
+### 14.3 事件类型
+
+```text
+run.started
+run.waiting_approval
+run.resumed
+run.completed
+run.failed
+run.cancelled
+skill.matched
+skill.started
+skill.completed
+node.started
+node.completed
+node.failed
+message.delta
+message.completed
+tool.started
+tool.approval_required
+tool.completed
+tool.failed
+checkpoint.created
+safety.blocked
+```
+
+### 14.4 SSE 可靠性
+
+- 同一 Run 的 `sequence` 从 1 单调递增。
+- 数据库约束 `UNIQUE (run_id, sequence)`。
+- SSE `id` 对应可恢复事件标识。
+- 客户端发送 `Last-Event-ID`，服务端回放缺失事件。
+- 服务端定期发送 SSE 注释心跳。
+- 客户端按 `event_id` 或 `(run_id, sequence)` 去重。
+- 终止事件发送后关闭该 Run 的流。
+- 事件先持久化，再广播；RabbitMQ 不是事件事实存储。
+
+---
+
+## 15. 前端架构
+
+### 15.1 页面路由
+
+```text
 /dashboard
 /chat
 /knowledge/documents
@@ -1301,612 +964,551 @@ run.failed
 /settings
 ```
 
-### 17.2 ChatPage 布局
+登录页在引入真实认证时实现，不能用前端伪登录代替后端认证。
+
+### 15.2 ChatPage 布局
 
 ```text
-左侧：会话列表 / 项目列表 / Skill 快捷入口
-中间：聊天消息区
+左侧：Paris Agent、导航、会话/项目/Skill 占位
+中间：聊天消息和输入框
 右侧：Agent Runtime 面板
 ```
 
-右侧面板包含：
+P3 只显示：
 
 ```text
-当前 Skill
-DAG Runtime
-Tool Calls
-Memories
-Retrieved Sources
-Checkpoints
-Trace
-Safety Events
+run_id
+status
+current_node
+events
+mock assistant response
+```
+
+Skill、DAG、Tool、Memory、Source、Checkpoint、Trace 和 Safety 面板在对应阶段逐步启用。
+
+### 15.3 状态职责
+
+```text
+Axios Client
+  REST 基础 URL、超时、请求和错误转换
+
+TanStack Query
+  服务端查询缓存、失效、分页和查询重试
+
+Pinia
+  当前会话、活跃 Run、SSE 增量、用户选择和页面交互状态
+
+EventSource Wrapper
+  SSE URL、事件解析、去重、重连和关闭
+```
+
+不得同时用 Pinia 和 TanStack Query 保存同一份服务端列表缓存。
+
+### 15.4 开发代理
+
+P3-P4 开发环境使用 Vite 同源代理将 `/api` 转发到后端，避免 REST 和 SSE 的浏览器
+CORS 问题。生产环境由反向代理统一域名；若未来需要跨域部署，再增加显式 CORS 白名单。
+
+---
+
+## 16. 可观测性与成本
+
+### 16.1 Trace 层级
+
+```text
+Run Span
+├── Guardrail Span
+├── Skill Router Span
+├── Memory Retrieval Span
+├── RAG Retrieval Span
+│   ├── Milvus Span
+│   ├── Elasticsearch Span
+│   └── Neo4j Span
+├── Planner Span
+├── DAG Node Spans
+├── Tool Call Spans
+├── Verifier Span
+└── Memory Writer Span
+```
+
+### 16.2 核心指标
+
+```text
+Run 成功率、失败率和取消率
+平均与 P95/P99 延迟
+首 token 延迟
+平均节点数和工具调用数
+模型输入/输出 token
+模型和 Skill 成本
+队列长度、等待时间和重试次数
+工具成功率和安全拦截次数
+RAG 检索耗时和命中质量
+SSE 活跃连接和重连次数
+```
+
+成本明细不能只保存在 `agent_runs.total_cost`。后续需要不可变 usage event，记录模型、
+供应商、输入/输出 token、单价、币种和关联节点。
+
+---
+
+## 17. 测试、迁移与发布门槛
+
+### 17.1 后端测试层级
+
+```text
+Unit
+  状态迁移、DAG 校验、评分、路由和策略
+
+Repository
+  PostgreSQL 约束、事务和查询
+
+API Contract
+  请求、响应、错误、认证和幂等
+
+Integration
+  PostgreSQL、Redis、RabbitMQ 和外部适配器
+
+End-to-End
+  创建 Run、SSE、工具审批、RAG 和 Sandbox 关键流程
+```
+
+### 17.2 前端验证
+
+- TypeScript 构建通过。
+- 页面在 1280px 和常见笔记本尺寸可用。
+- REST 成功、失败和超时状态可见。
+- SSE 增量、终止、断线和重复事件行为可验证。
+- 输入按钮防重复提交。
+- Run 切换或页面卸载时关闭旧 EventSource。
+
+### 17.3 每阶段完成门槛
+
+```text
+专项契约已确认
+Model 和 Migration 一致
+API/OpenAPI 与前端类型一致
+自动测试通过
+手动闭环验证通过
+.env.example 已同步
+运行命令可复现
+已知限制已记录
+没有越级实现后续大型子系统
 ```
 
 ---
 
-## 18. 前端核心组件
+## 18. P0-P16 分步骤需求实现菜单
 
-```text
-AgentChat
-ChatMessage
-MessageInput
-SkillSelector
-SlashCommandMenu
-SkillRunPanel
-AgentRunPanel
-DAGRuntimeViewer
-ToolCallTimeline
-ToolApprovalDialog
-MemoryList
-MemoryEditor
-DocumentUploader
-DocumentTable
-KnowledgeSourceList
-SandboxConsole
-TraceTimeline
-EvalMetricChart
-MetricCard
-```
-
----
-
-## 19. 前端 Store 设计
-
-```text
-authStore
-chatStore
-runStore
-skillStore
-memoryStore
-knowledgeStore
-toolStore
-evalStore
-sandboxStore
-monitoringStore
-settingsStore
-```
-
----
-
-## 20. 前端 API Client
-
-```text
-frontend/src/api/
-├── http.ts
-├── agent.ts
-├── skills.ts
-├── memory.ts
-├── knowledge.ts
-├── tools.ts
-├── eval.ts
-├── sandbox.ts
-├── monitoring.ts
-└── types.ts
-```
-
----
-
-## 21. 前端核心类型
-
-### 21.1 AgentRun
-
-```typescript
-export interface AgentRun {
-  run_id: string
-  thread_id: string
-  user_id: string
-  project_id?: string
-  skill_id?: string
-  task_type?: string
-  status: 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | 'waiting_approval'
-  current_node?: string
-  input: string
-  final_output?: string
-  error_message?: string
-  total_tokens: number
-  total_cost: number
-  created_at: string
-  updated_at: string
-}
-```
-
-### 21.2 Skill
-
-```typescript
-export interface Skill {
-  skill_id: string
-  name: string
-  description: string
-  version: string
-  enabled: boolean
-  risk_level?: 'safe' | 'low' | 'medium' | 'high' | 'block'
-  tools: string[]
-}
-```
-
-### 21.3 DAGNode
-
-```typescript
-export interface DAGNode {
-  node_id: string
-  node_name: string
-  node_type: 'llm' | 'tool' | 'rag' | 'memory' | 'verifier' | 'guardrail'
-  status: 'pending' | 'running' | 'success' | 'failed' | 'retrying' | 'fallback' | 'skipped'
-  depends_on: string[]
-  input?: Record<string, any>
-  output?: Record<string, any>
-  retry_count: number
-  latency_ms?: number
-  error_message?: string
-}
-```
-
-### 21.4 Memory
-
-```typescript
-export interface Memory {
-  memory_id: string
-  user_id: string
-  project_id?: string
-  memory_type: string
-  content: string
-  summary?: string
-  importance: number
-  confidence: number
-  tags: string[]
-  source: string
-  access_count: number
-  created_at: string
-  updated_at: string
-  expires_at?: string
-}
-```
-
-### 21.5 ToolCall
-
-```typescript
-export interface ToolCall {
-  tool_call_id: string
-  run_id: string
-  node_id?: string
-  tool_name: string
-  input: Record<string, any>
-  output?: Record<string, any>
-  status: 'pending' | 'running' | 'success' | 'failed' | 'blocked' | 'waiting_approval'
-  risk_level: 'safe' | 'low' | 'medium' | 'high' | 'block'
-  requires_approval: boolean
-  latency_ms?: number
-  created_at: string
-}
-```
-
----
-
-## 22. RAG 评测设计
-
-### 22.1 评测指标
-
-```text
-Recall@K
-MRR
-NDCG
-HitRate
-Faithfulness
-Answer Relevancy
-Context Precision
-Context Recall
-```
-
-### 22.2 对比策略
-
-```text
-Dense Only
-BM25 Only
-Graph Only
-Dense + BM25
-Dense + BM25 + Graph
-Hybrid + RRF
-Hybrid + Rerank
-```
-
----
-
-## 23. 可观测性设计
-
-### 23.1 Trace 结构
-
-```text
-Run
-├── Skill Router
-├── Input Guardrail
-├── Memory Retrieval
-├── Hybrid Retrieval
-│   ├── Milvus Search
-│   ├── Elasticsearch Search
-│   └── Neo4j Query
-├── Planner
-├── DAG ReAct Nodes
-├── Tool Calls
-├── Verifier
-├── Output Guardrail
-└── Memory Writer
-```
-
-### 23.2 核心指标
-
-```text
-Run 成功率
-Run 失败率
-平均响应时间
-P95 延迟
-平均 step 数
-平均 tool call 数
-模型调用次数
-输入 token
-输出 token
-总成本
-RabbitMQ 队列长度
-Worker 数量
-工具成功率
-安全拦截次数
-RAG 检索耗时
-```
-
----
-
-## 24. MVP 实现规划
+以下编号严格对齐 `AGENTS.md`。
 
 ### P0：项目骨架
 
-目标：
+**状态：** `[已实现]`
 
-```text
-跑通 backend、frontend、docker core services
+**目标：** 建立可启动的 backend、frontend、docker、docs 和 scripts。
+
+**需求：**
+
+- FastAPI、uv、pyproject.toml 和 uv.lock。
+- Vue 3、TypeScript、Vite、pnpm 和基础路由。
+- Docker Compose 启动 PostgreSQL、Redis、RabbitMQ。
+- `.env.example`、`.gitignore` 和 README。
+
+**验证：**
+
+```powershell
+Set-Location backend
+uv sync
+uv run uvicorn app.main:app --reload
+
+Set-Location ..\frontend
+pnpm install
+pnpm dev
+
+Set-Location ..\docker
+docker compose up -d
+docker compose ps
 ```
 
-内容：
+**完成标准：** 三端可启动，秘密不进入 Git。
 
-```text
-FastAPI health check
-Vue 基础页面
-PostgreSQL
-Redis
-RabbitMQ
-AGENTS.md
-.env.example
-```
+**本阶段不做：** Agent Runtime、RAG、Skill 和 Sandbox。
+
+### P1：后端 health check + 前端基础布局
+
+**状态：** `[已实现]`
+
+**前置依赖：** P0。
+
+**后端：** `/health` 返回服务和环境状态。
+
+**前端：** WorkbenchLayout、DashboardPage、Paris Agent 品牌和基础导航。
+
+**测试：** 后端 health API 测试、前端 `pnpm build`。
+
+**完成标准：** 浏览器可查看基础页面，health 返回 200。
+
+**本阶段不做：** ChatPage 和 Agent Run。
+
+### P2：Agent Run mock
+
+**状态：** `[已实现]`
+
+**前置依赖：** P1、PostgreSQL 和 Alembic。
+
+**后端：**
+
+- `agent_runs` Model、Repository 和 Migration。
+- `POST /api/agent/runs`。
+- `GET /api/agent/runs/{run_id}`。
+- 进程内 Mock Runner。
+
+**数据库：** UUID 业务 ID、状态 CHECK、TIMESTAMPTZ、成本和查询索引。
+
+**测试：** 创建、查询、成功、失败、404 和数据库约束。
+
+**完成标准：** Run 从 `queued` 进入 `running`，最终进入终态并持久化。
+
+**本阶段不做：** LangGraph、Skill、RAG、工具、队列和 Sandbox。
+
+### P3：ChatPage mock
+
+**状态：** `[进行中]`
+
+**前置依赖：** P2。
+
+**前端：**
+
+- 新增 `/chat`。
+- 创建 ChatPage、AgentChat、ChatMessage、MessageInput、AgentRunPanel。
+- 创建 `src/api/agent.ts` 和 Agent Run Pinia Store。
+- 通过 Vite `/api` 代理调用 POST 和 GET。
+- 展示 run_id、status、current_node 和模拟回复。
+
+**接口：** 复用 P2 REST 契约。
+
+**验证：** `pnpm build`；手动创建 Run 并查看最终状态。
+
+**完成标准：** 用户输入一句话后能够看到持久化 Run 和模拟回复。
+
+**本阶段不做：** 完整 Runtime 面板和持久 SSE 恢复。
+
+### P4：SSE 事件流
+
+**状态：** `[部分实现]`
+
+**前置依赖：** P2、P3。
+
+**后端：**
+
+- 保留当前 mock SSE。
+- 新增 `runtime_events` Model 和 Migration。
+- 事件先持久化再广播。
+- 支持 sequence、心跳、`Last-Event-ID` 和终止事件。
+
+**前端：**
+
+- EventSource 封装。
+- `message.delta` 增量显示。
+- 节点和 Run 事件更新右侧面板。
+- 断线重连、去重和卸载清理。
+
+**测试：** 事件顺序、回放、重连、重复事件、未知 Run 和终止关闭。
+
+**完成标准：** 服务短暂断连后不会丢失或重复展示已持久化事件。
+
+**本阶段不做：** RabbitMQ 多实例广播，可先采用 PostgreSQL 回放和单实例通知。
+
+### P5：Skill Registry
+
+**状态：** `[未开始]`
+
+**前置依赖：** P4。
+
+**后端：**
+
+- Skill YAML Schema、Loader、Validator 和 Registry。
+- `agent_skills`、`agent_skill_versions`。
+- `GET /api/skills`、`GET /api/skills/{skill_id}`。
+- 显式 Skill 选择和默认路由占位。
+
+**前端：** SkillSelector、SlashCommandMenu 初版。
+
+**测试：** 合法/非法 YAML、重复版本、禁用 Skill 和未知 Skill。
+
+**完成标准：** 能列出版本化 Skill，并让 Run 记录 Skill 版本。
+
+**本阶段不做：** 复杂 LLM 自动路由和完整 DAG 执行。
+
+### P6：长期记忆 V1
+
+**状态：** `[未开始]`
+
+**前置依赖：** P5、用户归属契约。
+
+**后端：**
+
+- `agent_memories` Model 和 Migration。
+- Memory Repository、Manager、Extractor Mock 和 Retriever。
+- 创建、查询、更新和删除 API。
+- 权限、来源、importance、confidence、版本和过期规则。
+
+**前端：** MemoryPage、MemoryList、MemoryEditor。
+
+**测试：** 用户隔离、范围约束、去重、过期和删除。
+
+**完成标准：** 可管理结构化记忆并在 mock Run 中检索。
+
+**本阶段不做：** Milvus 记忆向量和复杂自动合并。
+
+### P7：文档上传 + 基础 RAG
+
+**状态：** `[未开始]`
+
+**前置依赖：** P6、Milvus。
+
+**后端：**
+
+- documents、document_chunks 和 Migration。
+- 上传、文件校验、解析、Chunk 和 Embedding。
+- Milvus Dense Retrieval。
+- 返回答案引用的 Chunk 来源。
+
+**前端：** DocumentUploader、DocumentTable、KnowledgeSourceList。
+
+**测试：** 文件类型/大小、解析失败、Chunk 唯一性、检索和引用。
+
+**完成标准：** 上传文档后可通过 Dense Retrieval 返回可追溯来源。
+
+**本阶段不做：** BM25、GraphRAG 和异步队列。
+
+### P8：RabbitMQ + Celery
+
+**状态：** `[未开始]`
+
+**前置依赖：** P7。
+
+**后端：**
+
+- 消息信封和 Schema Version。
+- Transactional Outbox。
+- 文档解析和 Embedding Celery Task。
+- Retry、DLQ、幂等消费和任务状态。
+
+**前端：** 展示异步文档处理状态。
+
+**测试：** 重复投递、Worker 重启、重试上限、DLQ 和状态一致性。
+
+**完成标准：** 文档任务异步执行且重复消息不产生重复 Chunk。
+
+**本阶段不做：** Sandbox 和复杂 Agent Runtime。
+
+### P9：Tool Registry
+
+**状态：** `[未开始]`
+
+**前置依赖：** P8。
+
+**后端：**
+
+- Tool Schema、Registry、Manager 和 Guardrail。
+- safe/low/medium/high/block 风险规则。
+- agent_tool_calls 和 audit_logs。
+- 审批 API 和 Mock Tool。
+
+**前端：** ToolCallTimeline、ToolApprovalDialog。
+
+**测试：** Schema、权限、风险、审批、拒绝、超时和审计。
+
+**完成标准：** 所有工具只能经 Tool Manager 执行并产生审计记录。
+
+**本阶段不做：** 真正宿主机 Shell 和生产 Sandbox。
+
+### P10：DAG ReAct Runtime
+
+**状态：** `[未开始]`
+
+**前置依赖：** P9。
+
+**后端：**
+
+- DAGPlan、DAGValidator、DependencyResolver。
+- TopologicalScheduler 和 ParallelNodeExecutor。
+- agent_node_states。
+- 节点事件和状态持久化。
+
+**前端：** DAGRuntimeViewer。
+
+**测试：** 环检测、缺失依赖、并行组、失败传播和取消。
+
+**完成标准：** 一个多节点 Mock DAG 可按依赖并行执行并完整展示。
+
+**本阶段不做：** Checkpoint、Retry、Fallback 和 Sandbox。
+
+### P11：Harness Checkpoint / Retry / Fallback
+
+**状态：** `[未开始]`
+
+**前置依赖：** P10。
+
+**后端：**
+
+- RunManager、StateManager、CheckpointManager。
+- Retry、Fallback 和 Timeout Policy。
+- agent_checkpoints。
+- LangGraph Checkpointer 适配和恢复入口。
+
+**前端：** RunDetailPage、CheckpointList、TraceTimeline。
+
+**测试：** 节点重试、超时、Fallback、进程重启恢复和幂等恢复。
+
+**完成标准：** 故障 Run 能从合法 Checkpoint 恢复且不重复副作用。
+
+**本阶段不做：** 真实代码执行。
+
+### P12：Docker Sandbox
+
+**状态：** `[未开始]`
+
+**前置依赖：** P9、P11。
+
+**后端：**
+
+- Sandbox Tool Adapter。
+- 镜像白名单、非 root、网络和资源隔离。
+- 超时、输出限制、临时文件清理。
+- 高风险审批和完整审计。
+
+**前端：** SandboxConsole。
+
+**测试：** 网络阻断、资源限制、超时、危险命令、并发和清理。
+
+**完成标准：** 代码只能在受限容器中执行，宿主机不暴露。
+
+**本阶段不做：** 任意镜像和宿主机 Shell。
+
+### P13：Hybrid RAG
+
+**状态：** `[未开始]`
+
+**前置依赖：** P7、P8、Elasticsearch。
+
+**后端：**
+
+- BM25 索引和检索。
+- Dense 与 BM25 双路召回。
+- RRF 融合和可配置参数。
+- 外部索引同步状态与重建任务。
+
+**前端：** 展示来源类型、分数和融合排名。
+
+**测试：** 索引一致性、召回、融合、降级和重建。
+
+**完成标准：** Hybrid 检索可与 Dense Only 进行可重复对比。
+
+**本阶段不做：** Neo4j 图检索。
+
+### P14：GraphRAG
+
+**状态：** `[未开始]`
+
+**前置依赖：** P13、Neo4j。
+
+**后端：**
+
+- Entity/Relation Schema。
+- 实体抽取、消歧、关系写入和同步状态。
+- Graph Retrieval 与 Hybrid 结果融合。
+- Memory Graph 边界设计。
+
+**前端：** 知识实体关系和图来源查看。
+
+**测试：** 重复实体、关系版本、同步失败、图召回和来源追溯。
+
+**完成标准：** 图上下文能提升指定 Golden Query，并可追溯原文。
+
+**本阶段不做：** 无来源的自动事实写入。
+
+### P15：RAG 评测
+
+**状态：** `[未开始]`
+
+**前置依赖：** P13，可选 P14。
+
+**后端：**
+
+- Golden Query 数据集和版本。
+- rag_eval_tasks、rag_eval_results。
+- Recall@K、MRR、NDCG、HitRate。
+- Faithfulness、Answer Relevancy、Context Precision/Recall。
+- Dense、Hybrid、Graph 和 Rerank 对比。
+
+**前端：** EvalPage、EvalMetricChart。
+
+**测试：** 指标公式、数据集版本、任务重试和报告复现。
+
+**完成标准：** 同一版本数据集可重复生成策略对比报告。
+
+**本阶段不做：** 用单一 LLM Judge 分数代替全部质量判断。
+
+### P16：监控与可观测性
+
+**状态：** `[未开始]`
+
+**前置依赖：** P11-P15 的核心事件和 Trace。
+
+**后端与基础设施：**
+
+- OpenTelemetry Trace、Metric 和 Log Correlation。
+- Prometheus 指标。
+- Grafana Dashboard 和告警。
+- 模型 usage event 和成本聚合。
+
+**前端：** MonitoringPage、MetricCard 和关键 Trace 跳转。
+
+**测试：** Trace 贯通、指标标签基数、告警规则和敏感信息脱敏。
+
+**完成标准：** Run、节点、工具、队列、RAG 和成本可统一定位。
+
+**本阶段不做：** 记录 Prompt、密钥或用户敏感数据到不受控日志。
 
 ---
 
-### P1：Agent Run Mock
-
-目标：
+## 19. Codex 单步任务模板
 
 ```text
-前后端跑通一次 Agent Run
-```
-
-内容：
-
-```text
-POST /api/agent/runs
-GET /api/agent/runs/{run_id}
-GET /api/agent/runs/{run_id}/events
-ChatPage mock
-AgentRunPanel mock
-```
-
----
-
-### P2：Skill Registry
-
-目标：
-
-```text
-支持 Skill 列表和显式 Skill 调用
-```
-
-内容：
-
-```text
-Skill YAML
-Skill Registry
-GET /api/skills
-POST /api/skills/{skill_id}/run
-SkillSelector
-SlashCommandMenu 初版
-```
-
----
-
-### P3：长期记忆 V1
-
-目标：
-
-```text
-实现记忆读写和前端管理
-```
-
-内容：
-
-```text
-agent_memories 表
-MemoryManager
-MemoryExtractor mock
-MemoryRetriever
-MemoryPage
-MemoryList
-```
-
----
-
-### P4：基础 RAG
-
-目标：
-
-```text
-实现文档上传和 Milvus 向量检索
-```
-
-内容：
-
-```text
-DocumentUploader
-DocumentTable
-文档解析
-Chunk 切分
-Embedding
-Milvus Search
-KnowledgeSourceList
-```
-
----
-
-### P5：RabbitMQ + Celery
-
-目标：
-
-```text
-文档解析和 embedding 异步化
-```
-
-内容：
-
-```text
-document.ingest.queue
-document.embedding.queue
-tool.audit.logs.queue
-Celery Worker
-任务状态更新
-```
-
----
-
-### P6：Tool Registry
-
-目标：
-
-```text
-统一工具调用
-```
-
-内容：
-
-```text
-ToolRegistry
-ToolManager
-ToolGuardrail
-memory_search
-hybrid_search
-code_execute 占位
-ToolCallTimeline
-ToolApprovalDialog
-```
-
----
-
-### P7：DAG ReAct Runtime
-
-目标：
-
-```text
-实现动态图 ReAct 执行
-```
-
-内容：
-
-```text
-DAGPlan
-DAGValidator
-TopologicalScheduler
-ParallelNodeExecutor
-NodeState
-DAGRuntimeViewer
-```
-
----
-
-### P8：Harness 容错执行
-
-目标：
-
-```text
-实现 checkpoint、retry、fallback
-```
-
-内容：
-
-```text
-RunManager
-StateManager
-CheckpointManager
-RetryManager
-FallbackManager
-RunDetailPage
-CheckpointList
-TraceTimeline
-```
-
----
-
-### P9：Docker Sandbox
-
-目标：
-
-```text
-安全执行代码
-```
-
-内容：
-
-```text
-DockerSandbox
-CommandFilter
-code_execute
-SandboxConsole
-Audit Log
-```
-
----
-
-### P10：Hybrid RAG + GraphRAG
-
-目标：
-
-```text
-提升检索质量
-```
-
-内容：
-
-```text
-Elasticsearch BM25
-RRF
-Neo4j
-Entity Extraction
-Relation Extraction
-GraphRAG
-```
-
----
-
-### P11：RAG 评测与监控
-
-目标：
-
-```text
-补齐工程展示能力
-```
-
-内容：
-
-```text
-Golden Queries
-Recall@K
-MRR
-NDCG
-HitRate
-EvalPage
-MonitoringPage
-Prometheus
-Grafana
-OpenTelemetry
-```
-
----
-
-## 25. Codex 实现提示词模板
-
-每次让 Codex 实现功能时，使用以下模板：
-
-```text
-请根据 AGENTS.md 和 docs/FULLSTACK_TECH_DESIGN.md 完成本次任务。
-
-本次只实现一个小功能，不要扩大范围。
+请根据 AGENTS.md、docs/FULLSTACK_TECH_DESIGN.md 和本阶段专项契约，
+只实现【阶段编号 / 小步名称】。
 
 任务目标：
-【填写任务目标】
+前置依赖：
+本次范围：
+明确不做：
+需要修改的文件：
+数据结构：
+API / SSE / 消息契约：
+数据库与 Alembic：
+自动测试：
+手动验证：
+完成标准：
 
 要求：
-1. 先阅读相关设计文档和源码。
-2. 先输出实现计划。
-3. 明确会修改哪些文件。
-4. 先写类型和接口，再写实现。
-5. 不要引入不必要的新依赖。
-6. 后端依赖必须使用 uv 管理。
-7. 前端依赖必须使用 pnpm 管理。
-8. 新增数据库表必须使用 Alembic migration。
-9. 所有配置必须通过 .env 读取。
-10. 完成后输出修改文件、运行方式和验证步骤。
+1. 先阅读文档和相关源码。
+2. 先输出计划和修改文件。
+3. 先定义类型和接口，再写实现。
+4. 不新增无关依赖。
+5. 后端使用 uv，前端使用 pnpm。
+6. 数据库结构只通过 Alembic 修改。
+7. 配置通过 .env 和 .env.example 管理。
+8. 完成后输出修改文件、命令、验证结果和已知限制。
 ```
 
 ---
 
-## 26. 推荐第一个 Codex 任务
+## 20. 设计变更规则
 
-```text
-请根据 AGENTS.md 和 docs/FULLSTACK_TECH_DESIGN.md 初始化项目骨架。
-
-要求：
-1. 创建 backend、frontend、docker、docs、scripts 目录。
-2. backend 使用 uv + FastAPI。
-3. frontend 使用 Vue 3 + TypeScript + Vite + pnpm。
-4. docker-compose.yml 包含 PostgreSQL、Redis、RabbitMQ。
-5. 创建 backend/.env.example。
-6. 创建根目录 .gitignore。
-7. 创建 FastAPI /health 接口。
-8. 创建 Vue DashboardPage 和基础路由。
-9. 保证后端、前端、中间件都能启动。
-10. 输出运行命令和验证步骤。
-```
-
----
-
-## 27. 项目展示重点
-
-项目完成后，展示时重点展示：
-
-```text
-1. SkillSelector 选择技术问答 Skill
-2. 用户提出 Kafka 技术问题
-3. Agent 创建 Run
-4. 右侧 DAG Runtime 开始执行
-5. Memory Retriever 命中长期记忆
-6. Hybrid Retriever 返回 Milvus / BM25 / Graph 来源
-7. ToolCallTimeline 展示工具调用
-8. 高风险 code_execute 触发审批
-9. Docker Sandbox 返回 stdout / stderr
-10. RunDetailPage 展示 Checkpoint 和 Trace
-11. MemoryPage 展示写入的长期记忆
-12. EvalPage 展示 RAG 指标
-13. MonitoringPage 展示 token 成本和任务成功率
-```
-
----
-
-## 28. 简历描述
-
-项目名称：
-
-```text
-Paris Agent：面向程序员技术学习场景的 Skill-based Agent Workbench
-```
-
-项目描述：
-
-```text
-基于 Python、FastAPI、LangGraph、PostgreSQL、Milvus、RabbitMQ、Elasticsearch、Neo4j、Docker 和 Vue3 构建面向程序员技术学习场景的 Skill-based Agent Workbench。系统支持 Skill-based Agent Workflow、自研长期记忆系统、Hybrid GraphRAG、动态图 ReAct Runtime、Agent Harness 容错执行、多层安全校验、代码沙箱执行、RAG 评测和可观测性追踪，帮助用户完成技术问答、学习路线规划、文档知识沉淀、代码执行验证和个人知识体系构建。
-```
-
-技术亮点：
-
-```text
-1. 设计 Skill Registry 与 Skill Router，将技术问答、学习路线、RAG 评测、代码沙箱、记忆整理等能力封装为可配置 Skill。
-2. 设计自研长期记忆系统，支持学习画像、项目记忆、事件记忆、程序性记忆和运行时记忆。
-3. 设计动态图 ReAct Runtime，将复杂任务建模为 DAG，支持并行执行、节点重试、fallback 和 checkpoint。
-4. 设计 Agent Harness 容错执行引擎，统一管理状态、工具、超时、重试、恢复和 Trace。
-5. 设计 Hybrid GraphRAG，融合 Milvus 向量检索、Elasticsearch BM25 和 Neo4j 图谱检索。
-6. 设计多层安全机制和 Docker Sandbox，降低工具调用和代码执行风险。
-7. 使用 RabbitMQ + Celery 实现文档解析、Embedding、工具审计和评测任务异步化。
-8. 前端实现 Agent Workbench，可视化展示 Skill、DAG Runtime、Tool Calls、Memories、Trace、Checkpoint 和 RAG 来源。
-```
+- 跨模块契约变化先更新主设计或专项契约，再修改实现。
+- 破坏性 API、SSE 或消息变化必须提供版本或兼容迁移。
+- 阶段编号只允许在 `AGENTS.md` 中定义。
+- 每次只实现一个可验证的小闭环。
+- 设计文档不能替代测试，测试也不能替代明确契约。
