@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.events import agent_run_event_broker
 from app.agent.mock_runner import mock_agent_runner
 from app.core.config import get_settings
+from app.db.models.agent_run import AgentRun
 from app.db.repositories.agent_runs import AgentRunRepository
 from app.db.repositories.runtime_events import RuntimeEventRepository
+from app.db.repositories.skills import AgentSkillRunRepository
 from app.db.session import async_session_factory, get_session
 from app.schemas.agent import (
     AgentRunCreate,
@@ -20,6 +22,8 @@ from app.schemas.agent import (
     RuntimeEventEnvelope,
     TERMINAL_EVENT_TYPES,
 )
+from app.skills.selection import select_skill, SkillSelectionError
+from app.skills.registry import SkillRegistryNotReadyError
 
 
 router = APIRouter(prefix="/api/agent/runs", tags=["agent-runs"])
@@ -31,29 +35,67 @@ async def create_agent_run(
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> AgentRunCreated:
-    """持久化 queued Run，立即返回 202，再由 Mock Runner 异步执行。"""
-
+    """Create a Run with Skill binding in a single transaction."""
+    
+    # Skill selection
+    try:
+        selection = await select_skill(session, payload.skill_id)
+    except SkillRegistryNotReadyError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Skill Registry is not ready.",
+        )
+    except SkillSelectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    
     settings = get_settings()
-    repository = AgentRunRepository(session)
-    run = await repository.create(
+    
+    # Create AgentRun (no auto-commit)
+    import uuid as uuid_mod
+    run = AgentRun(
         user_id=settings.default_user_id,
-        input_text=payload.input,
+        input=payload.input,
         thread_id=payload.thread_id,
         project_id=payload.project_id,
-        skill_id=payload.skill_id,
+        skill_id=selection.skill.skill_id,
         task_type=payload.task_type,
     )
+    session.add(run)
+    await session.flush()
+    await session.refresh(run)
+    
+    # Create AgentSkillRun binding
+    skill_run_repo = AgentSkillRunRepository(session)
+    await skill_run_repo.create_binding(
+        skill_run_id=uuid_mod.uuid4(),
+        run_id=run.run_id,
+        skill_version_id=selection.skill_version.id,
+        selection_mode=selection.selection_mode,
+        definition_snapshot=selection.definition_snapshot,
+    )
+    
+    # Single commit for both AgentRun and AgentSkillRun
+    await session.commit()
+    await session.refresh(run)
+    
     detail_url = f"/api/agent/runs/{run.run_id}"
     events_url = f"{detail_url}/events"
     response.headers["Location"] = detail_url
-    # 必须先提交数据库，再启动后台任务，确保 Runner 一定能查询到该 Run。
+    
     mock_agent_runner.start(run.run_id)
+    
     return AgentRunCreated(
         run_id=run.run_id,
         status="queued",
         created_at=run.created_at,
         detail_url=detail_url,
         events_url=events_url,
+        skill_id=selection.skill.skill_id,
+        skill_version=selection.skill_version.version,
+        skill_selection_mode=selection.selection_mode,
     )
 
 
@@ -67,7 +109,20 @@ async def get_agent_run(
     run = await AgentRunRepository(session).get_by_run_id(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Agent run not found")
-    return AgentRunRead.model_validate(run)
+    
+    read = AgentRunRead.model_validate(run)
+    
+    # Enrich with skill version info from agent_skill_runs
+    skill_run_repo = AgentSkillRunRepository(session)
+    skill_run = await skill_run_repo.get_by_run_id(run_id)
+    if skill_run is not None:
+        from app.db.repositories.skills import SkillVersionRepository
+        version_repo = SkillVersionRepository(session)
+        version = await version_repo.get_by_id(skill_run.skill_version_id)
+        read.skill_version = version.version if version else None
+        read.skill_selection_mode = skill_run.selection_mode
+    
+    return read
 
 
 def _format_sse(envelope: RuntimeEventEnvelope) -> str:

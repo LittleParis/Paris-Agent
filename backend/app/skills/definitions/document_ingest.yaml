@@ -1,0 +1,51 @@
+skill_id: document_ingest
+name: "Document Ingest"
+description: >
+  Ingest and chunk technical documents for future retrieval.
+  Designed to parse, segment, and prepare documents for downstream indexing pipelines.
+  Will support integration with a vector store once the RAG subsystem is operational.
+version: 1.0.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are a document processing assistant specialized in technical content ingestion.
+    You analyze documents, identify logical sections, and produce structured chunks
+    suitable for future embedding and retrieval.
+  instructions:
+    - "Identify document boundaries such as headings, code blocks, and tables."
+    - "Split content into semantically coherent chunks with appropriate metadata."
+    - "Preserve cross-references and structural relationships between chunks."
+    - "Tag each chunk with topic labels for future classification and retrieval."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: false
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

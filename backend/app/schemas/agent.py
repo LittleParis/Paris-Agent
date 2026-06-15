@@ -49,6 +49,9 @@ class AgentRunCreated(BaseModel):
     created_at: datetime
     detail_url: str
     events_url: str
+    skill_id: str | None = None
+    skill_version: str | None = None
+    skill_selection_mode: str | None = None
 
 
 class AgentRunRead(BaseModel):
@@ -61,6 +64,8 @@ class AgentRunRead(BaseModel):
     user_id: uuid.UUID
     project_id: uuid.UUID | None
     skill_id: str | None
+    skill_version: str | None = None
+    skill_selection_mode: str | None = None
     task_type: str
     status: AgentRunStatus
     current_node: str | None
@@ -80,6 +85,11 @@ class AgentRunRead(BaseModel):
 # ===== P4 稳定事件信封 =====
 
 AgentRunEventType = Literal[
+    "skill.matched",
+    "memory.retrieval.started",
+    "memory.retrieval.completed",
+    "memory.write.started",
+    "memory.write.completed",
     "run.started",
     "node.started",
     "message.delta",
@@ -99,6 +109,11 @@ class RuntimeEventPayload(BaseModel):
     """事件特有数据，始终为 JSON 对象。
 
     不同事件类型使用不同字段子集：
+    - skill.matched:     { skill_id, skill_version, skill_selection_mode }
+    - memory.retrieval.started: { memory_query }
+    - memory.retrieval.completed: { memory_query, memories }
+    - memory.write.started:     {}
+    - memory.write.completed:   { memories, memory_write_count }
     - run.started:       { node_name? }
     - node.started:      { node_name }
     - message.delta:     { node_name?, delta }
@@ -113,6 +128,12 @@ class RuntimeEventPayload(BaseModel):
     output: str | None = None
     error_message: str | None = None
     reason: str | None = None
+    skill_id: str | None = None
+    skill_version: str | None = None
+    skill_selection_mode: str | None = None
+    memory_query: str | None = None
+    memories: list[dict] = Field(default_factory=list)
+    memory_write_count: int | None = None
 
 
 class RuntimeEventEnvelope(BaseModel):

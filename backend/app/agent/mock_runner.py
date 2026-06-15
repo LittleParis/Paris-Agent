@@ -4,6 +4,7 @@
 Skill、工具系统之前形成可验证闭环。
 
 P4 变化：事件先持久化到 runtime_events 表，再通过进程内 Broker 唤醒 SSE 消费者。
+P6 变化：集成 Memory 读取（MemoryRetriever）和写入（MockMemoryExtractor + MemoryManager）。
 """
 
 import asyncio
@@ -13,9 +14,14 @@ from decimal import Decimal
 from app.agent.events import AgentRunEventBroker, agent_run_event_broker
 from app.core.config import get_settings
 from app.db.repositories.agent_runs import AgentRunRepository
+from app.db.repositories.memories import MemoryRepository
 from app.db.repositories.runtime_events import RuntimeEventRepository
 from app.db.session import async_session_factory
+from app.memory.extractor import MockMemoryExtractor
+from app.memory.manager import MemoryManager
+from app.memory.retriever import MemoryRetriever
 from app.schemas.agent import RuntimeEventPayload
+from app.schemas.skill import SkillMemoryPolicy
 
 
 MOCK_OUTPUT = "这是 Paris Agent 的模拟回复。"
@@ -24,9 +30,13 @@ MOCK_OUTPUT = "这是 Paris Agent 的模拟回复。"
 class MockAgentRunner:
     """在当前 FastAPI 进程中异步推动 Agent Run。"""
 
-    def __init__(self, event_broker: AgentRunEventBroker) -> None:
+    def __init__(
+        self,
+        event_broker: AgentRunEventBroker | None,
+    ) -> None:
         self.event_broker = event_broker
         self._tasks: set[asyncio.Task[None]] = set()
+        self.memory_extractor = MockMemoryExtractor()
 
     def start(self, run_id: uuid.UUID) -> None:
         """启动后台任务且保存引用，避免 Task 被垃圾回收。"""
@@ -69,11 +79,80 @@ class MockAgentRunner:
             payload=payload,
         )
         # commit 已在 repo.append 内完成
-        try:
-            await self.event_broker.notify(run_id)
-        except Exception:
-            # 通知失败不影响已持久化事件，SSE 后续可通过数据库回放获得
-            pass
+        if self.event_broker is not None:
+            try:
+                await self.event_broker.notify(run_id)
+            except Exception:
+                pass
+
+    async def _retrieve_memories(
+        self,
+        *,
+        session,
+        user_id: uuid.UUID,
+        project_id: uuid.UUID | None,
+        query: str,
+    ) -> list[dict]:
+        """从长期记忆库中检索与查询相关的记忆摘要。"""
+
+        hits = await MemoryRetriever(
+            repository=MemoryRepository(session)
+        ).search(
+            user_id=user_id,
+            query=query,
+            project_id=project_id,
+            memory_types=[],
+            tags=[],
+            limit=5,
+            touch_access=True,
+        )
+        return [
+            {
+                "memory_id": str(hit.memory.memory_id),
+                "memory_type": hit.memory.memory_type,
+                "summary": hit.memory.summary or hit.memory.content[:120],
+                "score": hit.score,
+            }
+            for hit in hits
+        ]
+
+    async def _consolidate_memories(
+        self,
+        *,
+        session,
+        user_id: uuid.UUID,
+        project_id: uuid.UUID | None,
+        run_id: uuid.UUID,
+        skill_version: str,
+        text: str,
+    ) -> list[dict]:
+        """从用户输入中提取并固化长期记忆。"""
+
+        commands = self.memory_extractor.extract(
+            text=text,
+            project_id=project_id,
+            run_id=run_id,
+        )
+        manager = MemoryManager(session)
+        results = []
+        for command in commands:
+            result = await manager.create_consolidated(
+                user_id=user_id,
+                run_id=run_id,
+                skill_version=skill_version,
+                payload=command,
+            )
+            results.append(
+                {
+                    "memory_id": str(result.memory.memory_id),
+                    "memory_type": result.memory.memory_type,
+                    "summary": result.memory.summary
+                    or result.memory.content[:120],
+                    "created": result.created,
+                    "deduplicated": result.deduplicated,
+                }
+            )
+        return results
 
     async def run(self, run_id: uuid.UUID) -> None:
         """执行固定 mock 流程并同步更新数据库与事件流。"""
@@ -88,6 +167,37 @@ class MockAgentRunner:
                 if run is None:
                     return
 
+                # skill.matched：从 agent_skill_runs 读取真实绑定信息
+                from app.db.repositories.skills import AgentSkillRunRepository
+                from app.db.repositories.skills import SkillVersionRepository
+                
+                skill_run_repo = AgentSkillRunRepository(session)
+                skill_run = await skill_run_repo.get_by_run_id(run_id)
+                version_str = ""
+                snapshot: dict = {}
+                memory_policy = SkillMemoryPolicy(read=False, write=False)
+                if skill_run is not None:
+                    version_repo = SkillVersionRepository(session)
+                    skill_version = await version_repo.get_by_id(skill_run.skill_version_id)
+                    version_str = skill_version.version if skill_version else ""
+                    snapshot = skill_run.definition_snapshot
+                    skill_id_str = snapshot.get("skill_id", "") if isinstance(snapshot, dict) else ""
+                    memory_policy = SkillMemoryPolicy.model_validate(
+                        snapshot.get("memory_policy", {"read": False, "write": False})
+                    )
+                    
+                    await self._publish_event(
+                        session,
+                        run_id=run_id,
+                        event_type="skill.matched",
+                        status="queued",
+                        payload=RuntimeEventPayload(
+                            skill_id=skill_id_str,
+                            skill_version=version_str,
+                            skill_selection_mode=skill_run.selection_mode,
+                        ),
+                    )
+
                 # run.started：先将 Run 状态更新为 running
                 await run_repo.update_state(
                     run,
@@ -101,6 +211,32 @@ class MockAgentRunner:
                     status="running",
                     payload=RuntimeEventPayload(node_name=node_name),
                 )
+
+                # P6 Memory Retrieval：如果 Skill 启用了 read，先检索相关记忆
+                if memory_policy.read:
+                    await self._publish_event(
+                        session,
+                        run_id=run_id,
+                        event_type="memory.retrieval.started",
+                        status="running",
+                        payload=RuntimeEventPayload(memory_query=run.input),
+                    )
+                    memories = await self._retrieve_memories(
+                        session=session,
+                        user_id=run.user_id,
+                        project_id=run.project_id,
+                        query=run.input,
+                    )
+                    await self._publish_event(
+                        session,
+                        run_id=run_id,
+                        event_type="memory.retrieval.completed",
+                        status="running",
+                        payload=RuntimeEventPayload(
+                            memory_query=run.input,
+                            memories=memories,
+                        ),
+                    )
 
                 # node.started
                 await self._publish_event(
@@ -136,6 +272,34 @@ class MockAgentRunner:
                         output=MOCK_OUTPUT,
                     ),
                 )
+
+                # P6 Memory Write：如果 Skill 启用了 write，固化提取的记忆
+                if memory_policy.write:
+                    await self._publish_event(
+                        session,
+                        run_id=run_id,
+                        event_type="memory.write.started",
+                        status="running",
+                        payload=RuntimeEventPayload(),
+                    )
+                    written = await self._consolidate_memories(
+                        session=session,
+                        user_id=run.user_id,
+                        project_id=run.project_id,
+                        run_id=run_id,
+                        skill_version=version_str,
+                        text=run.input,
+                    )
+                    await self._publish_event(
+                        session,
+                        run_id=run_id,
+                        event_type="memory.write.completed",
+                        status="running",
+                        payload=RuntimeEventPayload(
+                            memories=written,
+                            memory_write_count=len(written),
+                        ),
+                    )
 
                 # run.completed：先将 Run 状态更新为 succeeded
                 await run_repo.update_state(

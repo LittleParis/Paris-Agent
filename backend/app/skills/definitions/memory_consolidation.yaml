@@ -1,0 +1,52 @@
+skill_id: memory_consolidation
+name: "Memory Consolidation"
+description: >
+  Consolidate short-term interactions into long-term memory.
+  Designed to distill key facts and preferences from recent conversations into
+  persistent user and project memory stores. Will support automatic consolidation
+  once the memory subsystem is fully operational.
+version: 1.1.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are a memory consolidation assistant. You analyze recent interaction history,
+    extract durable facts and user preferences, and prepare them for long-term storage
+    in a structured format.
+  instructions:
+    - "Review recent interaction transcripts for extractable facts and preferences."
+    - "Deduplicate information already present in long-term memory."
+    - "Rank extracted items by relevance and recency for prioritized storage."
+    - "Output a structured consolidation record ready for future memory writes."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: true
+  write: true
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

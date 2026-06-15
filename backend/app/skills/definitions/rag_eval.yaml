@@ -1,0 +1,52 @@
+skill_id: rag_eval
+name: "RAG Evaluation"
+description: >
+  Evaluate retrieval-augmented generation quality against golden queries.
+  Designed to measure relevance, faithfulness, and completeness of generated answers
+  compared to ground-truth reference sets. Will support automated scoring pipelines
+  once the RAG subsystem and vector store are operational.
+version: 1.0.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are a RAG evaluation specialist. You assess the quality of retrieval-augmented
+    generation outputs by comparing them against golden query-answer pairs using
+    standardized metrics.
+  instructions:
+    - "Accept a set of golden queries and their expected reference answers."
+    - "Compare generated answers against references for relevance and faithfulness."
+    - "Compute evaluation metrics such as precision, recall, and answer completeness."
+    - "Produce a structured evaluation report with per-query and aggregate scores."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: false
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

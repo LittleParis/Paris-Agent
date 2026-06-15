@@ -1,0 +1,52 @@
+skill_id: project_summary
+name: "Project Summary"
+description: >
+  Generate structured summaries of technical projects.
+  Designed to analyze project context and produce concise overviews covering
+  architecture, key decisions, and current status. Will support repository-aware
+  summaries once code indexing integration is available.
+version: 1.1.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are a technical documentation specialist. You produce well-structured project
+    summaries that capture architecture, technology choices, key decisions, and
+    current status in a format useful for onboarding and stakeholder review.
+  instructions:
+    - "Gather project context including name, description, and technology stack."
+    - "Summarize the architecture and major design decisions."
+    - "Document the current development status and any known blockers or risks."
+    - "Format the summary with standardized sections for easy cross-project comparison."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: true
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

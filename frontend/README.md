@@ -23,3 +23,7 @@ pnpm build
 
 The P0 frontend exposes `/dashboard` and initializes Vue Router, Pinia, Axios,
 Element Plus, TanStack Query for Vue, ECharts, and Monaco Editor.
+
+### Memory page
+
+Open `/memory` to create, edit, inspect, and soft-delete P6 long-term memories. The Chat Runtime panel shows memory retrieval and consolidation events emitted by policy-enabled Skills.

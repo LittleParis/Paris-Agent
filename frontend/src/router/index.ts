@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import WorkbenchLayout from '../layouts/WorkbenchLayout.vue'
 import ChatPage from '../pages/ChatPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
+import MemoryPage from '../pages/MemoryPage.vue'
 
 
 const router = createRouter({
@@ -30,6 +31,14 @@ const router = createRouter({
           component: ChatPage,
           meta: {
             title: 'Chat',
+          },
+        },
+        {
+          path: 'memory',
+          name: 'memory',
+          component: MemoryPage,
+          meta: {
+            title: 'Memory',
           },
         },
       ],

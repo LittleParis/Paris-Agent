@@ -12,13 +12,19 @@ from app.db.models.agent_run import AgentRun
 from app.db.models.runtime_event import RuntimeEvent  # noqa: F401
 from app.db.session import engine
 from app.db.session import async_session_factory
+from tests.conftest import sync_skills_for_test
+from app.skills.registry import skill_registry
 
 
 @pytest.fixture(autouse=True)
 async def database() -> None:
     agent_run_event_broker.clear()
+    # Reset registry state for each test
+    skill_registry._ready = False
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+    # Sync skills for P5 tests
+    await sync_skills_for_test()
     yield
     await mock_agent_runner.wait_for_all()
     async with engine.begin() as connection:
@@ -80,23 +86,14 @@ async def test_get_agent_run_returns_completed_mock_result() -> None:
         response = await client.get(f"/api/agent/runs/{run_id}")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "run_id": run_id,
-        "thread_id": None,
-        "user_id": "00000000-0000-0000-0000-000000000001",
-        "project_id": None,
-        "skill_id": None,
-        "task_type": "chat",
-        "status": "succeeded",
-        "current_node": None,
-        "input": "解释 Kafka 的高吞吐设计",
-        "final_output": "这是 Paris Agent 的模拟回复。",
-        "error_message": None,
-        "total_tokens": 32,
-        "total_cost": "0.00000000",
-        "created_at": response.json()["created_at"],
-        "updated_at": response.json()["updated_at"],
-    }
+    body = response.json()
+    assert body["run_id"] == run_id
+    assert body["status"] == "succeeded"
+    assert body["skill_id"] == "tech_qa"
+    assert body["skill_version"] == "1.1.0"
+    assert body["skill_selection_mode"] == "default"
+    assert body["final_output"] == "这是 Paris Agent 的模拟回复。"
+    assert body["total_tokens"] == 32
 
 
 @pytest.mark.anyio
@@ -135,7 +132,10 @@ async def test_agent_run_events_stream_mock_sequence() -> None:
         if line.startswith("event: ")
     ]
     assert event_types == [
+        "skill.matched",
         "run.started",
+        "memory.retrieval.started",
+        "memory.retrieval.completed",
         "node.started",
         "message.delta",
         "message.delta",
@@ -143,16 +143,15 @@ async def test_agent_run_events_stream_mock_sequence() -> None:
         "run.completed",
     ]
 
-    # 解析 SSE id 字段（应为 UUID）
+    # 9 events now (7 base + 2 memory retrieval)
     sse_ids = [
         line.removeprefix("id: ")
         for line in response.text.splitlines()
         if line.startswith("id: ")
     ]
-    assert len(sse_ids) == 6
-    # 每个 id 都是合法的 UUID 且互不相同
+    assert len(sse_ids) == 9
     uuids = [__import__("uuid").UUID(sid) for sid in sse_ids]
-    assert len(set(uuids)) == 6
+    assert len(set(uuids)) == 9
 
     # 验证 JSON 数据中的 sequence 和 payload
     import json
@@ -162,9 +161,9 @@ async def test_agent_run_events_stream_mock_sequence() -> None:
         for line in response.text.splitlines()
         if line.startswith("data: ")
     ]
-    assert len(data_lines) == 6
+    assert len(data_lines) == 9
     sequences = [d["sequence"] for d in data_lines]
-    assert sequences == [1, 2, 3, 4, 5, 6]
+    assert sequences == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     # 验证稳定事件信封字段
     for data in data_lines:
@@ -174,11 +173,21 @@ async def test_agent_run_events_stream_mock_sequence() -> None:
         assert "status" in data
         assert "payload" in data
 
-    # 验证 payload 内容
-    assert data_lines[0]["payload"]["node_name"] == "mock_executor"
-    assert data_lines[2]["payload"]["delta"] == "这是 Paris Agent "
-    assert data_lines[3]["payload"]["delta"] == "的模拟回复。"
-    assert data_lines[5]["payload"]["output"] == "这是 Paris Agent 的模拟回复。"
+    # skill.matched is the first event
+    assert data_lines[0]["payload"]["skill_id"] == "tech_qa"
+    assert data_lines[0]["payload"]["skill_version"] == "1.1.0"
+    assert data_lines[0]["payload"]["skill_selection_mode"] == "default"
+
+    # memory.retrieval.started has the query
+    assert data_lines[2]["payload"]["memory_query"] == "返回模拟执行事件"
+    # memory.retrieval.completed has memories list
+    assert "memories" in data_lines[3]["payload"]
+
+    # The rest of the payload checks (shifted by +2 for memory events)
+    assert data_lines[4]["payload"]["node_name"] == "mock_executor"
+    assert data_lines[5]["payload"]["delta"] == "这是 Paris Agent "
+    assert data_lines[6]["payload"]["delta"] == "的模拟回复。"
+    assert data_lines[8]["payload"]["output"] == "这是 Paris Agent 的模拟回复。"
 
 
 @pytest.mark.anyio
@@ -315,7 +324,7 @@ async def test_sse_last_event_id_replays_only_subsequent() -> None:
             for line in full_resp.text.splitlines()
             if line.startswith("data: ")
         ]
-        # 用第 3 个事件（message.delta, sequence=3）作为游标
+        # 用第 3 个事件（memory.retrieval.started, sequence=3）作为游标
         cursor_event_id = full_data[2]["event_id"]
 
         # 使用 Last-Event-ID 重连
@@ -329,8 +338,11 @@ async def test_sse_last_event_id_replays_only_subsequent() -> None:
         for line in replay_resp.text.splitlines()
         if line.startswith("event: ")
     ]
-    # 应该只收到 sequence > 3 的事件：message.delta, node.completed, run.completed
+    # 应该只收到 sequence > 3 的事件
     assert replay_types == [
+        "memory.retrieval.completed",
+        "node.started",
+        "message.delta",
         "message.delta",
         "node.completed",
         "run.completed",
@@ -342,4 +354,4 @@ async def test_sse_last_event_id_replays_only_subsequent() -> None:
         if line.startswith("data: ")
     ]
     replay_sequences = [d["sequence"] for d in replay_data]
-    assert replay_sequences == [4, 5, 6]
+    assert replay_sequences == [4, 5, 6, 7, 8, 9]

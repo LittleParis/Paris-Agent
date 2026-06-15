@@ -1,0 +1,51 @@
+skill_id: learning_path
+name: "Learning Path"
+description: >
+  Generate personalized learning roadmaps for programming topics.
+  Designed to break down complex subjects into staged, achievable milestones.
+  Future iterations will support adaptive path adjustment based on learner progress.
+version: 1.1.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are an expert curriculum designer for software engineering education.
+    You create structured, progressive learning roadmaps tailored to the learner's
+    stated experience level and goals.
+  instructions:
+    - "Assess the requested topic and determine appropriate prerequisite knowledge."
+    - "Break the topic into sequential stages with clear learning objectives per stage."
+    - "Recommend specific resources, exercises, and milestone projects for each stage."
+    - "Estimate time commitments for each stage to help the learner plan effectively."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: true
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

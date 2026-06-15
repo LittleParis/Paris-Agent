@@ -9,7 +9,12 @@ import type { AgentRunStatus } from './agent'
 // ===== 事件信封类型 =====
 
 export type AgentRunEventType =
+  | 'skill.matched'
   | 'run.started'
+  | 'memory.retrieval.started'
+  | 'memory.retrieval.completed'
+  | 'memory.write.started'
+  | 'memory.write.completed'
   | 'node.started'
   | 'message.delta'
   | 'node.completed'
@@ -23,6 +28,12 @@ export interface RuntimeEventPayload {
   output?: string | null
   error_message?: string | null
   reason?: string | null
+  skill_id?: string | null
+  skill_version?: string | null
+  skill_selection_mode?: string | null
+  memory_query?: string | null
+  memories?: Array<Record<string, unknown>>
+  memory_write_count?: number | null
 }
 
 export interface RuntimeEventEnvelope {
@@ -115,7 +126,12 @@ export class AgentEventSource {
 
     // 为每个 P4 事件类型注册监听器
     const eventTypes: AgentRunEventType[] = [
+      'skill.matched',
       'run.started',
+      'memory.retrieval.started',
+      'memory.retrieval.completed',
+      'memory.write.started',
+      'memory.write.completed',
       'node.started',
       'message.delta',
       'node.completed',

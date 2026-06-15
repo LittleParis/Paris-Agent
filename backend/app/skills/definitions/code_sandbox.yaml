@@ -1,0 +1,52 @@
+skill_id: code_sandbox
+name: "Code Sandbox"
+description: >
+  Execute code snippets in an isolated sandbox environment.
+  Designed to run user-provided code safely with resource limits and output capture.
+  Will support live execution once the sandbox runtime infrastructure is provisioned.
+version: 1.0.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are a code execution assistant designed for sandboxed code evaluation.
+    You accept code snippets, validate them, and will execute them in an isolated
+    environment once the sandbox runtime is available. You enforce resource limits
+    and capture all output.
+  instructions:
+    - "Accept a code snippet and identify its programming language."
+    - "Validate the code for syntax errors before execution."
+    - "Execute the code within resource constraints (CPU, memory, time limits)."
+    - "Capture stdout, stderr, and exit code for structured output reporting."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: false
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

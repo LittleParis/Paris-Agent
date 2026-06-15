@@ -1,0 +1,72 @@
+graph TB
+    subgraph Entry["外部入口"]
+        API["routes_memories.py<br/><i>Memory API 路由</i><br/>POST / GET / PATCH / DELETE"]
+        Runner["mock_runner.py<br/><i>Mock Agent Runner</i><br/>_retrieve_memories()<br/>_consolidate_memories()"]
+    end
+
+    subgraph Domain["memory/ — 业务逻辑层"]
+        Manager["manager.py<br/><b>MemoryManager</b><br/>create_manual()<br/>create_consolidated()<br/>update() / delete() / get()"]
+        Retriever["retriever.py<br/><b>MemoryRetriever</b><br/>search() / _score()"]
+        Extractor["extractor.py<br/><b>MockMemoryExtractor</b><br/>extract()"]
+        Dedup["deduplicator.py<br/><i>纯函数工具</i><br/>normalize_content()<br/>normalize_tags()<br/>compute_content_hash()"]
+    end
+
+    subgraph Persistence["db/ — 持久化层"]
+        Repo["repositories/memories.py<br/><b>MemoryRepository</b><br/>create() / get_owned()<br/>find_active_duplicate()<br/>list_owned() / search_candidates()<br/>update_owned_with_version()<br/>soft_delete_owned_with_version()<br/>touch_access_batch()"]
+        Model["models/agent_memory.py<br/><b>AgentMemory</b><br/>SQLAlchemy Model"]
+    end
+
+    subgraph Schema["schemas/ — 数据契约"]
+        Schemas["memory.py<br/>MemoryCreate / MemoryRead<br/>MemoryUpdate / MemoryWriteResult<br/>ConsolidationMemoryCommand<br/>MemorySearchHit / MemoryScoreBreakdown<br/>MemoryListResponse / MemorySearchRequest"]
+    end
+
+    subgraph Config["core/ — 配置"]
+        Settings["config.py<br/><b>Settings</b><br/>normalized_memory_weights()<br/>6 个 MEMORY_*_WEIGHT"]
+    end
+
+    subgraph Skill["skills/ — Skill 策略"]
+        Policy["schemas/skill.py<br/><b>SkillMemoryPolicy</b><br/>read / write<br/>write requires read"]
+        YAML["definitions/*.yaml<br/>tech_qa / learning_path<br/>project_summary<br/>memory_consolidation<br/>(唯一 write=true)"]
+    end
+
+    %% 入口调用
+    API -- "create_manual()<br/>update() / delete() / get()" --> Manager
+    API -- "search()" --> Retriever
+    Runner -- "_retrieve_memories()<br/>→ search()" --> Retriever
+    Runner -- "_consolidate_memories()<br/>→ extract() 然后<br/>create_consolidated()" --> Extractor
+    Runner -- "create_consolidated()" --> Manager
+
+    %% Domain 内部调用
+    Manager -- "compute_content_hash()" --> Dedup
+    Manager -- "find_active_duplicate()<br/>create()<br/>update_owned_with_version()<br/>soft_delete_owned_with_version()" --> Repo
+    Extractor -- "生成" --> Schemas
+
+    %% Retriever 调用
+    Retriever -- "search_candidates()<br/>touch_access_batch()" --> Repo
+    Retriever -- "normalized_memory_weights()" --> Settings
+
+    %% 持久化层
+    Repo -- "ORM 操作" --> Model
+    Repo -- "使用" --> Schema
+
+    %% Manager 使用 Schema
+    Manager -- "输入/输出" --> Schema
+
+    %% Skill 策略控制 Runner
+    Policy -- "memory_policy.read<br/>memory_policy.write" --> Runner
+    YAML -- "定义 memory_policy" --> Policy
+
+    %% 样式
+    classDef entryNode fill:#1a365d,stroke:#63b3ed,color:#e2e8f0
+    classDef domainNode fill:#22543d,stroke:#68d391,color:#e2e8f0
+    classDef persistNode fill:#744210,stroke:#ecc94b,color:#e2e8f0
+    classDef schemaNode fill:#553c9a,stroke:#b794f4,color:#e2e8f0
+    classDef configNode fill:#7b341e,stroke:#f6ad55,color:#e2e8f0
+    classDef skillNode fill:#702459,stroke:#f687b3,color:#e2e8f0
+
+    class API,Runner entryNode
+    class Manager,Retriever,Extractor,Dedup domainNode
+    class Repo,Model persistNode
+    class Schemas schemaNode
+    class Settings configNode
+    class Policy,YAML skillNode

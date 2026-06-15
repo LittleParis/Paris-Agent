@@ -22,6 +22,9 @@ export interface AgentRunCreated {
   created_at: string
   detail_url: string
   events_url: string
+  skill_id?: string | null
+  skill_version?: string | null
+  skill_selection_mode?: string | null
 }
 
 export interface AgentRun {
@@ -30,6 +33,8 @@ export interface AgentRun {
   user_id: string
   project_id: string | null
   skill_id: string | null
+  skill_version?: string | null
+  skill_selection_mode?: string | null
   task_type: string
   status: AgentRunStatus
   current_node: string | null

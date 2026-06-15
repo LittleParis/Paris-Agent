@@ -24,9 +24,10 @@ const pageTitle = computed(() =>
       <nav aria-label="Primary navigation">
         <RouterLink to="/dashboard">Dashboard</RouterLink>
         <RouterLink to="/chat">Chat</RouterLink>
+        <RouterLink to="/memory">Memory</RouterLink>
       </nav>
 
-      <p class="phase-label">P3 / ChatPage Mock</p>
+      <p class="phase-label">P6 / Long-Term Memory V1</p>
     </aside>
 
     <main class="workspace">

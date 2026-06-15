@@ -46,3 +46,7 @@ GET  /api/agent/runs/{run_id}/events
 
 P1 uses an in-process mock runner and in-memory SSE event broker. RabbitMQ,
 LangGraph, Skills, tools, memory, and RAG are intentionally not connected yet.
+
+### Memory API
+
+Run `uv run alembic upgrade head`, then use `/api/v1/memories` for CRUD and `/api/v1/memories/search` for deterministic PostgreSQL retrieval.

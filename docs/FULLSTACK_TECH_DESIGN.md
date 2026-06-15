@@ -92,7 +92,8 @@ RAG 评测与可观测性
 | P2 Agent Run mock | 已实现 | 数据库持久化、POST/GET、进程内 Mock Runner 已存在 |
 | P3 ChatPage mock | 已实现 | ChatPage、组件、Pinia、REST API Client 和短轮询已完成 |
 | P4 SSE 事件流 | 已实现 | runtime_events 持久化、稳定事件信封、Last-Event-ID 回放、心跳、终止关闭、前端 EventSource 订阅和去重已完成 |
-| P5-P16 | 未开始 | 只能按阶段专项实现 |
+| P5 Skill Registry | 已实现 | Skill YAML、Registry、版本化 Skill 列表和 Run 记录 Skill 版本已完成 |
+| P6-P16 | 未开始 | 只能按阶段专项实现 |
 
 早期文档曾把 Agent Run Mock 称为“P1”。该叫法只保留在历史文件名
 `P1_AGENT_RUN_CONTRACT.md` 中；后续需求编号统一以 `AGENTS.md` 为准。
@@ -1221,7 +1222,7 @@ docker compose ps
 
 ### P5：Skill Registry
 
-**状态：** `[未开始]`
+**状态：** `[已实现]`
 
 **前置依赖：** P4。
 
@@ -1512,3 +1513,9 @@ API / SSE / 消息契约：
 - 阶段编号只允许在 `AGENTS.md` 中定义。
 - 每次只实现一个可验证的小闭环。
 - 设计文档不能替代测试，测试也不能替代明确契约。
+
+## P6 Long-Term Memory V1
+
+P6 stores canonical long-term memories in PostgreSQL and exposes user-scoped CRUD, exact deduplication, optimistic locking, deterministic retrieval, controlled Skill memory policies, Runtime Events, and the `/memory` workbench page.
+
+Milvus is not connected in P6. Every memory remains `sync_status=not_indexed`; the Milvus projection worker and vector search begin in P7. P6 also does not use an LLM extractor, RabbitMQ, Elasticsearch, or Neo4j.

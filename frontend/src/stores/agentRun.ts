@@ -63,6 +63,18 @@ export const useAgentRunStore = defineStore('agent-run', () => {
   const lastSequence = ref(0)
   const seenEventIds = ref<Set<string>>(new Set())
 
+  // ===== P5 Skill 状态 =====
+  const selectedSkillId = ref<string | null>(null)
+  const skillInfo = ref<{
+    skill_id: string | null
+    skill_version: string | null
+    skill_selection_mode: string | null
+  }>({ skill_id: null, skill_version: null, skill_selection_mode: null })
+
+  // ===== P6 Memory 状态 =====
+  const retrievedMemories = ref<Array<Record<string, unknown>>>([])
+  const writtenMemories = ref<Array<Record<string, unknown>>>([])
+
   // ===== 内部状态 =====
   const agentEventSource = new AgentEventSource()
   let requestToken = 0
@@ -116,6 +128,23 @@ export const useAgentRunStore = defineStore('agent-run', () => {
 
     // 按事件类型分发处理
     switch (envelope.event_type) {
+      case 'skill.matched':
+        if (envelope.payload) {
+          skillInfo.value = {
+            skill_id: (envelope.payload as any).skill_id ?? null,
+            skill_version: (envelope.payload as any).skill_version ?? null,
+            skill_selection_mode: (envelope.payload as any).skill_selection_mode ?? null,
+          }
+        }
+        break
+
+      case 'memory.retrieval.completed':
+        retrievedMemories.value = envelope.payload.memories ?? []
+        break
+      case 'memory.write.completed':
+        writtenMemories.value = envelope.payload.memories ?? []
+        break
+
       case 'run.started':
         if (currentRun.value) {
           currentRun.value = { ...currentRun.value, status: 'running' }
@@ -237,6 +266,10 @@ export const useAgentRunStore = defineStore('agent-run', () => {
 
     const token = ++requestToken
 
+    // 先捕获当前选中的 skill，再清除 UI 状态
+    const skillIdForRun = selectedSkillId.value ?? undefined
+    selectedSkillId.value = null
+
     // 关闭旧连接、清理旧 Run 的事件状态
     closeSSE()
     events.value = []
@@ -244,6 +277,9 @@ export const useAgentRunStore = defineStore('agent-run', () => {
     seenEventIds.value = new Set()
     accumulatedDelta = ''
     pendingAssistantMessageId = null
+    skillInfo.value = { skill_id: null, skill_version: null, skill_selection_mode: null }
+    retrievedMemories.value = []
+    writtenMemories.value = []
 
     errorMessage.value = null
     currentRun.value = null
@@ -262,6 +298,7 @@ export const useAgentRunStore = defineStore('agent-run', () => {
       const created = await createAgentRun({
         input: normalizedInput,
         task_type: 'chat',
+        skill_id: skillIdForRun,
       })
       if (token !== requestToken) { return }
 
@@ -284,6 +321,15 @@ export const useAgentRunStore = defineStore('agent-run', () => {
         total_cost: '0.00000000',
         created_at: created.created_at,
         updated_at: created.created_at,
+      }
+
+      // If response includes skill info, update skillInfo
+      if (created.skill_id || created.skill_version) {
+        skillInfo.value = {
+          skill_id: created.skill_id ?? null,
+          skill_version: created.skill_version ?? null,
+          skill_selection_mode: created.skill_selection_mode ?? null,
+        }
       }
 
       isSubmitting.value = false
@@ -316,6 +362,10 @@ export const useAgentRunStore = defineStore('agent-run', () => {
     seenEventIds.value = new Set()
     accumulatedDelta = ''
     pendingAssistantMessageId = null
+    selectedSkillId.value = null
+    skillInfo.value = { skill_id: null, skill_version: null, skill_selection_mode: null }
+    retrievedMemories.value = []
+    writtenMemories.value = []
   }
 
   return {
@@ -330,6 +380,12 @@ export const useAgentRunStore = defineStore('agent-run', () => {
     events,
     connectionStatus,
     lastSequence,
+    // P5 Skill 状态
+    selectedSkillId,
+    skillInfo,
+    // P6 Memory 状态
+    retrievedMemories,
+    writtenMemories,
     // 操作
     submitMessage,
     closeSSE,

@@ -1,0 +1,52 @@
+skill_id: codex_task
+name: "Codex Task"
+description: >
+  Break down complex engineering tasks into actionable steps.
+  Designed to decompose high-level engineering goals into sequenced, implementable
+  sub-tasks with dependency tracking. Will support automated execution via the Codex
+  harness once the orchestration layer is operational.
+version: 1.0.0
+enabled: true
+is_default: false
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are an engineering task planner. You decompose complex technical objectives
+    into clear, sequenced sub-tasks with explicit acceptance criteria and dependency
+    relationships. Your output is structured for handoff to implementation agents.
+  instructions:
+    - "Analyze the high-level engineering objective and identify required deliverables."
+    - "Break the objective into ordered sub-tasks with clear scope boundaries."
+    - "Define acceptance criteria and expected outputs for each sub-task."
+    - "Identify dependencies between sub-tasks and flag potential risks or blockers."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: false
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0

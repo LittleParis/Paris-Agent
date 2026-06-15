@@ -11,6 +11,13 @@ const props = defineProps<{
   events: RuntimeEventItem[]
   connectionStatus: SSEConnectionStatus
   errorMessage: string | null
+  skillInfo: {
+    skill_id: string | null
+    skill_version: string | null
+    skill_selection_mode: string | null
+  }
+  retrievedMemories: Array<Record<string, unknown>>
+  writtenMemories: Array<Record<string, unknown>>
 }>()
 
 const runId = computed(
@@ -77,6 +84,14 @@ const connectionStatusClass = computed(() => {
           <dt>Run ID</dt>
           <dd class="run-id">{{ runId }}</dd>
         </div>
+        <div v-if="skillInfo.skill_id">
+          <dt>Skill</dt>
+          <dd>{{ skillInfo.skill_id }}@{{ skillInfo.skill_version ?? '?' }}</dd>
+        </div>
+        <div v-if="skillInfo.skill_selection_mode">
+          <dt>Selection</dt>
+          <dd>{{ skillInfo.skill_selection_mode }}</dd>
+        </div>
         <div>
           <dt>Current Node</dt>
           <dd>{{ run?.current_node ?? '—' }}</dd>
@@ -117,6 +132,23 @@ const connectionStatusClass = computed(() => {
       <p>{{ errorMessage }}</p>
     </div>
 
+    <!-- P6 Memory Events -->
+    <section v-if="retrievedMemories.length || writtenMemories.length" class="runtime-memory">
+      <h3>Memories</h3>
+      <p v-if="retrievedMemories.length">Retrieved: {{ retrievedMemories.length }}</p>
+      <ul v-if="retrievedMemories.length">
+        <li v-for="item in retrievedMemories" :key="String(item.memory_id)">
+          {{ item.memory_type }} · {{ item.summary }}
+        </li>
+      </ul>
+      <p v-if="writtenMemories.length">Written: {{ writtenMemories.length }}</p>
+      <ul v-if="writtenMemories.length">
+        <li v-for="item in writtenMemories" :key="String(item.memory_id)">
+          {{ item.memory_type }} · {{ item.summary }}
+        </li>
+      </ul>
+    </section>
+
     <!-- 事件时间线 -->
     <div v-if="events.length > 0" class="event-timeline">
       <h3>事件时间线</h3>
@@ -140,8 +172,8 @@ const connectionStatusClass = computed(() => {
     </div>
 
     <div class="run-panel-note">
-      <span>P4 Scope</span>
-      <p>事件先持久化到数据库，再通过 SSE 推送到浏览器。支持断线恢复和事件回放。</p>
+      <span>P5 Scope</span>
+      <p>Skill Registry 注册、查询、显式选择和默认选择。每个 Run 绑定不可变 Skill Version 快照。</p>
     </div>
   </aside>
 </template>

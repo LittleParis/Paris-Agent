@@ -1,0 +1,51 @@
+skill_id: tech_qa
+name: "Technical Q&A"
+description: >
+  Answer software engineering questions with structured reasoning.
+  Designed to serve as the default skill for general technical Q&A interactions.
+  Future iterations will support RAG-augmented answers backed by indexed documentation.
+version: 1.1.0
+enabled: true
+is_default: true
+
+input_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+output_schema:
+  type: object
+  properties: {}
+  additionalProperties: false
+
+prompt:
+  system: >
+    You are a senior software engineering assistant. You answer technical questions
+    with clear, structured reasoning and accurate explanations. When uncertain, you
+    state your assumptions explicitly.
+  instructions:
+    - "Parse the user's question and identify the core technical topic."
+    - "Provide a concise, accurate answer with relevant code examples when applicable."
+    - "Structure the response with headings or bullet points for clarity."
+    - "Cite language versions, library versions, or standards where relevant."
+
+workflow:
+  entrypoint: mock_executor
+  nodes:
+    - id: mock_executor
+      type: mock
+      dependencies: []
+
+tools: []
+
+memory_policy:
+  read: true
+  write: false
+
+safety_policy:
+  risk_level: safe
+  requires_approval: false
+
+runtime_config:
+  timeout_seconds: 60
+  max_retries: 0
