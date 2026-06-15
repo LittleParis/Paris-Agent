@@ -12,18 +12,39 @@ import {
 } from '../api/memories'
 import MemoryEditor from '../components/memory/MemoryEditor.vue'
 import MemoryList from '../components/memory/MemoryList.vue'
+import { getErrorMessage } from '../utils/error'
 
 const items = ref<Memory[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const editorOpen = ref(false)
 const editing = ref<Memory | null>(null)
+const nextCursor = ref<string | null>(null)
 
 async function load(): Promise<void> {
   loading.value = true
   try {
-    items.value = (await listMemories()).items
+    const response = await listMemories()
+    items.value = response.items
+    nextCursor.value = response.next_cursor
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMore(): Promise<void> {
+  if (!nextCursor.value || loadingMore.value) { return }
+  loadingMore.value = true
+  try {
+    const response = await listMemories(nextCursor.value)
+    items.value = [...items.value, ...response.items]
+    nextCursor.value = response.next_cursor
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -38,24 +59,37 @@ function openEdit(memory: Memory): void {
 }
 
 async function save(payload: MemoryWrite): Promise<void> {
-  if (editing.value) {
-    await updateMemory(editing.value.memory_id, {
-      ...payload,
-      version: editing.value.version,
-    })
-  } else {
-    await createMemory(payload)
+  try {
+    if (editing.value) {
+      await updateMemory(editing.value.memory_id, {
+        ...payload,
+        version: editing.value.version,
+      })
+    } else {
+      await createMemory(payload)
+    }
+    editorOpen.value = false
+    ElMessage.success('Memory saved')
+    await load()
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
   }
-  editorOpen.value = false
-  ElMessage.success('Memory saved')
-  await load()
 }
 
 async function remove(memory: Memory): Promise<void> {
-  await ElMessageBox.confirm('Soft-delete this memory?', 'Confirm')
-  await deleteMemory(memory.memory_id, memory.version)
-  ElMessage.success('Memory deleted')
-  await load()
+  try {
+    await ElMessageBox.confirm('Soft-delete this memory?', 'Confirm')
+  } catch {
+    // User cancelled the dialog — nothing to do
+    return
+  }
+  try {
+    await deleteMemory(memory.memory_id, memory.version)
+    ElMessage.success('Memory deleted')
+    await load()
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error))
+  }
 }
 
 onMounted(load)
@@ -77,6 +111,9 @@ onMounted(load)
       @edit="openEdit"
       @remove="remove"
     />
+    <div v-if="nextCursor" class="memory-load-more">
+      <ElButton :loading="loadingMore" @click="loadMore">Load more</ElButton>
+    </div>
     <ElDialog v-model="editorOpen" :title="editing ? 'Edit memory' : 'New memory'" width="640">
       <MemoryEditor
         :memory="editing"

@@ -885,6 +885,139 @@ h1 {
   background: rgba(188, 169, 242, 0.04);
 }
 
+/* ===== P6: Memory page ===== */
+
+.memory-page {
+  padding-top: 32px;
+}
+
+.memory-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.memory-page-header h2 {
+  margin: 8px 0 6px;
+  color: #edf4fc;
+  font-size: clamp(24px, 3vw, 36px);
+  letter-spacing: -0.03em;
+}
+
+.memory-page-header p {
+  color: #8494a7;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.memory-list-wrapper {
+  min-height: 200px;
+  position: relative;
+}
+
+.memory-cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #d4dfeb;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: default;
+}
+
+.memory-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
+/* ===== P6: Memory editor ===== */
+
+.memory-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 20px;
+}
+
+.memory-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #223040;
+}
+
+/* ===== P6: Runtime memory section in AgentRunPanel ===== */
+
+.runtime-memory {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #223040;
+}
+
+.runtime-memory h3 {
+  color: #8faec8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+
+.runtime-memory p {
+  color: #7f90a3;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+
+.runtime-memory ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.runtime-memory li {
+  padding: 5px 8px;
+  border-radius: 5px;
+  border-left: 2px solid #32654b;
+  background: rgba(89, 214, 158, 0.04);
+  color: #c4d8e8;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== P6: Memory event timeline colors ===== */
+
+.event-item--memory-retrieval-started {
+  border-left-color: #5a9fd4;
+}
+
+.event-item--memory-retrieval-completed {
+  border-left-color: #59d69e;
+  background: rgba(89, 214, 158, 0.04);
+}
+
+.event-item--memory-write-started {
+  border-left-color: #e5a244;
+}
+
+.event-item--memory-write-completed {
+  border-left-color: #bca9f2;
+  background: rgba(188, 169, 242, 0.04);
+}
+
 @media (max-width: 1100px) {
   .chat-workspace {
     grid-template-columns: 1fr;
@@ -973,5 +1106,18 @@ h1 {
 
   .message-input-footer button {
     width: 100%;
+  }
+
+  .memory-page {
+    padding-top: 20px;
+  }
+
+  .memory-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .memory-editor-grid {
+    grid-template-columns: 1fr;
   }
 }

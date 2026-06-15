@@ -1,4 +1,3 @@
-from functools import lru_cache
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -59,6 +58,18 @@ class Settings(BaseSettings):
         }
 
 
-@lru_cache
+_settings_instance: Settings | None = None
+
+
 def get_settings() -> Settings:
-    return Settings()
+    """Return the process-wide settings singleton.
+
+    Unlike ``lru_cache``, the instance is a plain module-level variable,
+    so callers (or tests) may replace or refresh it by assigning to
+    ``app.core.config._settings_instance``.
+    """
+
+    global _settings_instance
+    if _settings_instance is None:
+        _settings_instance = Settings()
+    return _settings_instance

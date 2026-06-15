@@ -1,4 +1,3 @@
-import axios from 'axios'
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
@@ -10,9 +9,11 @@ import {
 } from '../api/agent'
 import {
   AgentEventSource,
+  type MemoryEventItem,
   type RuntimeEventEnvelope,
   type SSEConnectionStatus,
 } from '../api/agentEvents'
+import { getErrorMessage } from '../utils/error'
 
 export interface ChatMessageItem {
   id: string
@@ -31,22 +32,6 @@ export interface RuntimeEventItem {
 
 function createMessageId(): string {
   return crypto.randomUUID()
-}
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail
-    if (typeof detail === 'string') {
-      return detail
-    }
-    if (error.code === 'ECONNABORTED') {
-      return '请求超时，请确认后端服务是否正常运行。'
-    }
-    if (!error.response) {
-      return '无法连接 Paris Agent 后端，请确认 8000 端口已启动。'
-    }
-  }
-  return '请求处理失败，请稍后重试。'
 }
 
 export const useAgentRunStore = defineStore('agent-run', () => {
@@ -72,8 +57,8 @@ export const useAgentRunStore = defineStore('agent-run', () => {
   }>({ skill_id: null, skill_version: null, skill_selection_mode: null })
 
   // ===== P6 Memory 状态 =====
-  const retrievedMemories = ref<Array<Record<string, unknown>>>([])
-  const writtenMemories = ref<Array<Record<string, unknown>>>([])
+  const retrievedMemories = ref<MemoryEventItem[]>([])
+  const writtenMemories = ref<MemoryEventItem[]>([])
 
   // ===== 内部状态 =====
   const agentEventSource = new AgentEventSource()
@@ -131,9 +116,9 @@ export const useAgentRunStore = defineStore('agent-run', () => {
       case 'skill.matched':
         if (envelope.payload) {
           skillInfo.value = {
-            skill_id: (envelope.payload as any).skill_id ?? null,
-            skill_version: (envelope.payload as any).skill_version ?? null,
-            skill_selection_mode: (envelope.payload as any).skill_selection_mode ?? null,
+            skill_id: envelope.payload.skill_id ?? null,
+            skill_version: envelope.payload.skill_version ?? null,
+            skill_selection_mode: envelope.payload.skill_selection_mode ?? null,
           }
         }
         break

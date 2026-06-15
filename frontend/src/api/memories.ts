@@ -50,8 +50,12 @@ export interface MemoryListResponse {
   next_cursor: string | null
 }
 
-export async function listMemories(): Promise<MemoryListResponse> {
-  const response = await http.get<MemoryListResponse>('/v1/memories')
+export async function listMemories(cursor?: string): Promise<MemoryListResponse> {
+  const params: Record<string, string> = {}
+  if (cursor) {
+    params.cursor = cursor
+  }
+  const response = await http.get<MemoryListResponse>('/v1/memories', { params })
   return response.data
 }
 

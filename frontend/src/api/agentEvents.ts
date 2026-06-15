@@ -8,6 +8,19 @@ import type { AgentRunStatus } from './agent'
 
 // ===== 事件信封类型 =====
 
+/**
+ * Lightweight memory summary returned inside SSE memory events.
+ * This is intentionally a subset of the full `Memory` interface —
+ * the backend only ships the fields needed for real-time display.
+ */
+export interface MemoryEventItem {
+  memory_id: string
+  memory_type: string
+  summary: string | null
+  content?: string | null
+  tags?: string[]
+}
+
 export type AgentRunEventType =
   | 'skill.matched'
   | 'run.started'
@@ -32,7 +45,7 @@ export interface RuntimeEventPayload {
   skill_version?: string | null
   skill_selection_mode?: string | null
   memory_query?: string | null
-  memories?: Array<Record<string, unknown>>
+  memories?: MemoryEventItem[]
   memory_write_count?: number | null
 }
 

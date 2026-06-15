@@ -181,6 +181,19 @@ class AgentMemory(Base):
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
         ).ddl_if(dialect="postgresql"),
+        Index(
+            "uq_agent_memories_active_content_sqlite",
+            "user_id",
+            "scope",
+            text(
+                "coalesce(project_id, "
+                "'00000000-0000-0000-0000-000000000000')"
+            ),
+            "memory_type",
+            "content_hash",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+        ).ddl_if(dialect="sqlite"),
     )
 
     id: Mapped[int] = mapped_column(

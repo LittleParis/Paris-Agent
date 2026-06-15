@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import type { AgentRun, AgentRunCreated } from '../../api/agent'
-import type { SSEConnectionStatus } from '../../api/agentEvents'
+import type { MemoryEventItem, SSEConnectionStatus } from '../../api/agentEvents'
 import type { RuntimeEventItem } from '../../stores/agentRun'
 
 const props = defineProps<{
@@ -16,8 +16,8 @@ const props = defineProps<{
     skill_version: string | null
     skill_selection_mode: string | null
   }
-  retrievedMemories: Array<Record<string, unknown>>
-  writtenMemories: Array<Record<string, unknown>>
+  retrievedMemories: MemoryEventItem[]
+  writtenMemories: MemoryEventItem[]
 }>()
 
 const runId = computed(
@@ -137,13 +137,13 @@ const connectionStatusClass = computed(() => {
       <h3>Memories</h3>
       <p v-if="retrievedMemories.length">Retrieved: {{ retrievedMemories.length }}</p>
       <ul v-if="retrievedMemories.length">
-        <li v-for="item in retrievedMemories" :key="String(item.memory_id)">
+        <li v-for="item in retrievedMemories" :key="item.memory_id">
           {{ item.memory_type }} · {{ item.summary }}
         </li>
       </ul>
       <p v-if="writtenMemories.length">Written: {{ writtenMemories.length }}</p>
       <ul v-if="writtenMemories.length">
-        <li v-for="item in writtenMemories" :key="String(item.memory_id)">
+        <li v-for="item in writtenMemories" :key="item.memory_id">
           {{ item.memory_type }} · {{ item.summary }}
         </li>
       </ul>
@@ -172,8 +172,8 @@ const connectionStatusClass = computed(() => {
     </div>
 
     <div class="run-panel-note">
-      <span>P5 Scope</span>
-      <p>Skill Registry 注册、查询、显式选择和默认选择。每个 Run 绑定不可变 Skill Version 快照。</p>
+      <span>P6 Scope</span>
+      <p>Long-Term Memory V1 — 检索与写入事件实时展示。Skill 快照由 P5 提供，每个 Run 绑定不可变 Skill Version。</p>
     </div>
   </aside>
 </template>

@@ -159,6 +159,24 @@ class MemoryRepository:
             stmt = stmt.where(AgentMemory.scope == scope)
         if project_id is not None:
             stmt = stmt.where(AgentMemory.project_id == project_id)
+        if tag is not None:
+            # Push tag filtering to SQL level for correct cursor pagination.
+            from sqlalchemy import text as sql_text
+
+            dialect = self.session.bind.dialect.name
+            if dialect == "postgresql":
+                stmt = stmt.where(
+                    AgentMemory.tags.op("@>")(
+                        sql_text("CAST(:tag_json AS jsonb)")
+                    )
+                ).params(tag_json=f'["{tag}"]')
+            else:
+                stmt = stmt.where(
+                    sql_text(
+                        "EXISTS (SELECT 1 FROM json_each(agent_memories.tags) "
+                        "WHERE json_each.value = :tag)"
+                    )
+                ).params(tag=tag)
         if cursor is not None:
             cursor_time, cursor_id = _decode_cursor(cursor)
             stmt = stmt.where(
@@ -174,10 +192,10 @@ class MemoryRepository:
             AgentMemory.updated_at.desc(),
             AgentMemory.memory_id.asc(),
         )
+        # Fetch limit + 1 to detect next page after SQL-level filtering.
+        stmt = stmt.limit(limit + 1)
         result = await self.session.execute(stmt)
         rows = list(result.scalars().all())
-        if tag is not None:
-            rows = [memory for memory in rows if tag in memory.tags]
         page = rows[:limit]
         next_cursor = None
         if len(rows) > limit and page:
@@ -192,6 +210,7 @@ class MemoryRepository:
         project_id: uuid.UUID | None,
         memory_types: list[str],
         tags: list[str],
+        limit: int = 50,
     ) -> list[AgentMemory]:
         now = datetime.now(UTC)
         scope_filter = AgentMemory.scope == "user"
@@ -214,6 +233,10 @@ class MemoryRepository:
         )
         if memory_types:
             stmt = stmt.where(AgentMemory.memory_type.in_(memory_types))
+        stmt = stmt.order_by(
+            AgentMemory.importance.desc(),
+            AgentMemory.updated_at.desc(),
+        ).limit(limit)
         result = await self.session.execute(stmt)
         rows = list(result.scalars().all())
         if tags:
@@ -232,7 +255,15 @@ class MemoryRepository:
         user_id: uuid.UUID,
         expected_version: int,
         values: dict,
-    ) -> bool:
+    ) -> AgentMemory | None:
+        """Update a memory row with optimistic locking.
+
+        Returns the updated ``AgentMemory`` on success, or ``None`` when
+        the version check failed or the row was not found.  Uses
+        ``RETURNING`` (PostgreSQL / SQLite 3.35+) to avoid an extra
+        SELECT round trip.
+        """
+
         values = {
             **values,
             "version": AgentMemory.version + 1,
@@ -247,8 +278,9 @@ class MemoryRepository:
                 AgentMemory.deleted_at.is_(None),
             )
             .values(**values)
+            .returning(AgentMemory)
         )
-        return result.rowcount == 1
+        return result.scalar_one_or_none()
 
     async def soft_delete_owned_with_version(
         self,

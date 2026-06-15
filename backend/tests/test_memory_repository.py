@@ -159,3 +159,127 @@ async def test_touch_access_batch_updates_only_owned_memories() -> None:
     assert foreign_read is not None
     assert owned_read.access_count == 1
     assert foreign_read.access_count == 0
+
+
+@pytest.mark.anyio
+async def test_list_owned_tag_filter_preserves_pagination() -> None:
+    """C1 fix: tag filtering must happen at SQL level, not Python level,
+    so cursor pagination returns exactly `limit` items per page."""
+
+    user_id = uuid4()
+    # Create 5 tagged memories and 5 untagged, interleaved.
+    for i in range(10):
+        tag = ["important"] if i % 2 == 0 else []
+        await create_memory(
+            user_id=user_id,
+            content=f"memory_{i}",
+            tags=tag,
+        )
+
+    async with async_session_factory() as session:
+        repository = MemoryRepository(session)
+        # Page 1: should get exactly 2 tagged memories.
+        page1, cursor1 = await repository.list_owned(
+            user_id=user_id,
+            memory_type=None,
+            scope=None,
+            project_id=None,
+            tag="important",
+            include_expired=True,
+            limit=2,
+            cursor=None,
+        )
+        assert len(page1) == 2
+        assert cursor1 is not None
+        assert all("important" in m.tags for m in page1)
+
+        # Page 2: should get 2 more tagged memories.
+        page2, cursor2 = await repository.list_owned(
+            user_id=user_id,
+            memory_type=None,
+            scope=None,
+            project_id=None,
+            tag="important",
+            include_expired=True,
+            limit=2,
+            cursor=cursor1,
+        )
+        assert len(page2) == 2
+        assert cursor2 is not None
+        assert all("important" in m.tags for m in page2)
+
+        # Page 3: only 1 tagged memory left.
+        page3, cursor3 = await repository.list_owned(
+            user_id=user_id,
+            memory_type=None,
+            scope=None,
+            project_id=None,
+            tag="important",
+            include_expired=True,
+            limit=2,
+            cursor=cursor2,
+        )
+        assert len(page3) == 1
+        assert cursor3 is None
+        assert all("important" in m.tags for m in page3)
+
+        # No overlap between pages.
+        all_ids = (
+            {m.memory_id for m in page1}
+            | {m.memory_id for m in page2}
+            | {m.memory_id for m in page3}
+        )
+        assert len(all_ids) == 5  # 5 tagged total
+
+
+@pytest.mark.anyio
+async def test_sqlite_unique_index_prevents_active_duplicate() -> None:
+    """C2 fix: SQLite must enforce uniqueness of active memories
+    at the database level, not just at the application level."""
+
+    from sqlalchemy.exc import IntegrityError
+
+    user_id = uuid4()
+    content_hash = "a" * 64
+
+    async with async_session_factory() as session:
+        repository = MemoryRepository(session)
+        await repository.create(
+            user_id=user_id,
+            project_id=None,
+            memory_type="semantic",
+            scope="user",
+            content="original",
+            summary="original",
+            importance=Decimal("0.5000"),
+            confidence=Decimal("0.5000"),
+            source_type="manual",
+            source_id=None,
+            source_detail={},
+            tags=[],
+            content_hash=content_hash,
+            expires_at=None,
+        )
+        await session.commit()
+
+    # Second insert with same identity fields should fail at DB level.
+    with pytest.raises(IntegrityError):
+        async with async_session_factory() as session:
+            repository = MemoryRepository(session)
+            await repository.create(
+                user_id=user_id,
+                project_id=None,
+                memory_type="semantic",
+                scope="user",
+                content="duplicate",
+                summary="duplicate",
+                importance=Decimal("0.5000"),
+                confidence=Decimal("0.5000"),
+                source_type="manual",
+                source_id=None,
+                source_detail={},
+                tags=[],
+                content_hash=content_hash,
+                expires_at=None,
+            )
+            await session.commit()

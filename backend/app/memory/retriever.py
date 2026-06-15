@@ -43,6 +43,7 @@ class MemoryRetriever:
             project_id=project_id,
             memory_types=memory_types,
             tags=tags,
+            limit=limit * 10,  # Fetch more candidates than needed for scoring.
         )
         now = datetime.now(UTC)
         hits = [
@@ -69,7 +70,8 @@ class MemoryRetriever:
                 user_id=user_id,
                 memory_ids=[hit.memory.memory_id for hit in selected],
             )
-            await self.repository.session.commit()
+            # Caller is responsible for committing the session.
+            # This avoids committing on a session the retriever doesn't own (W5/W7).
         return selected
 
     def _score(

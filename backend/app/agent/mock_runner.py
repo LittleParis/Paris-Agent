@@ -93,7 +93,10 @@ class MockAgentRunner:
         project_id: uuid.UUID | None,
         query: str,
     ) -> list[dict]:
-        """从长期记忆库中检索与查询相关的记忆摘要。"""
+        """从长期记忆库中检索与查询相关的记忆摘要。
+
+        调用方负责 session.commit()，因为 Retriever 不再自行提交 (W5/W7)。
+        """
 
         hits = await MemoryRetriever(
             repository=MemoryRepository(session)
@@ -106,6 +109,8 @@ class MockAgentRunner:
             limit=5,
             touch_access=True,
         )
+        # Commit the touch_access update on the runner's own session.
+        await session.commit()
         return [
             {
                 "memory_id": str(hit.memory.memory_id),
@@ -126,13 +131,19 @@ class MockAgentRunner:
         skill_version: str,
         text: str,
     ) -> list[dict]:
-        """从用户输入中提取并固化长期记忆。"""
+        """从用户输入中提取并固化长期记忆。
+
+        使用 auto_commit=False 确保批量操作原子性：
+        所有记忆在同一事务中创建，任一条失败则整体回滚。
+        """
 
         commands = self.memory_extractor.extract(
             text=text,
             project_id=project_id,
             run_id=run_id,
         )
+        if not commands:
+            return []
         manager = MemoryManager(session)
         results = []
         for command in commands:
@@ -141,6 +152,7 @@ class MockAgentRunner:
                 run_id=run_id,
                 skill_version=skill_version,
                 payload=command,
+                auto_commit=False,
             )
             results.append(
                 {
@@ -152,6 +164,8 @@ class MockAgentRunner:
                     "deduplicated": result.deduplicated,
                 }
             )
+        # Single atomic commit for the entire batch.
+        await session.commit()
         return results
 
     async def run(self, run_id: uuid.UUID) -> None:

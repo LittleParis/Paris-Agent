@@ -121,6 +121,7 @@ class MemoryManager:
         run_id: uuid.UUID,
         skill_version: str,
         payload: ConsolidationMemoryCommand | MemoryCreate,
+        auto_commit: bool = True,
     ) -> MemoryWriteResult:
         content_hash = _content_hash(
             memory_type=payload.memory_type,
@@ -162,8 +163,9 @@ class MemoryManager:
             content_hash=content_hash,
             expires_at=payload.expires_at,
         )
-        await self.session.commit()
-        await self.session.refresh(memory)
+        if auto_commit:
+            await self.session.commit()
+            await self.session.refresh(memory)
         return MemoryWriteResult(
             memory=MemoryRead.model_validate(memory),
             created=True,
@@ -177,6 +179,7 @@ class MemoryManager:
         user_id: uuid.UUID,
         payload: MemoryUpdate,
     ) -> AgentMemory:
+        # Round trip 1: read current state for validation and hash computation.
         current = await self.get(memory_id=memory_id, user_id=user_id)
         if current.version != payload.version:
             raise MemoryVersionConflictError(current.version)
@@ -206,6 +209,7 @@ class MemoryManager:
             raise ValueError("project memories must use project scope")
 
         content_hash = _content_hash(**merged)
+        # Round trip 2: duplicate check.
         duplicate = await self.repository.find_active_duplicate(
             user_id=user_id,
             scope=merged["scope"],
@@ -217,21 +221,19 @@ class MemoryManager:
         if duplicate is not None:
             raise DuplicateMemoryError(duplicate.memory_id)
         values["content_hash"] = content_hash
-        updated = await self.repository.update_owned_with_version(
+        # Round trip 3: update with optimistic lock, RETURNING the new row.
+        memory = await self.repository.update_owned_with_version(
             memory_id=memory_id,
             user_id=user_id,
             expected_version=payload.version,
             values=values,
         )
-        if not updated:
+        if memory is None:
             latest = await self.repository.get_owned(memory_id, user_id)
             if latest is None:
                 raise MemoryNotFoundError
             raise MemoryVersionConflictError(latest.version)
         await self.session.commit()
-        memory = await self.repository.get_owned(memory_id, user_id)
-        if memory is None:
-            raise MemoryNotFoundError
         return memory
 
     async def delete(

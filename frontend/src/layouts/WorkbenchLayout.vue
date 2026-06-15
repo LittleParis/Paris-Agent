@@ -8,6 +8,17 @@ const route = useRoute()
 const pageTitle = computed(() =>
   typeof route.meta.title === 'string' ? route.meta.title : 'Workbench',
 )
+
+const routeTag = computed(() => {
+  switch (route.name) {
+    case 'chat':
+      return { label: 'P3 Integration', type: 'primary' as const }
+    case 'memory':
+      return { label: 'P6 Memory', type: 'warning' as const }
+    default:
+      return { label: 'Foundation', type: 'success' as const }
+  }
+})
 </script>
 
 <template>
@@ -36,11 +47,8 @@ const pageTitle = computed(() =>
           <span class="eyebrow">Skill-based Agent Workbench</span>
           <h1>{{ pageTitle }}</h1>
         </div>
-        <ElTag
-          :type="route.name === 'chat' ? 'primary' : 'success'"
-          effect="plain"
-        >
-          {{ route.name === 'chat' ? 'P3 Integration' : 'Foundation' }}
+        <ElTag :type="routeTag.type" effect="plain">
+          {{ routeTag.label }}
         </ElTag>
       </header>
 
